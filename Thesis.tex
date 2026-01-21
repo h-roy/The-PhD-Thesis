@@ -1,0 +1,57 @@
+\input{preamble/static}
+
+%!TEX TS-program = xelatex
+%!TEX root = ../Thesis.tex
+\RequirePackage[l2tabu,orthodox]{nag} % Old habits die hard
+
+\newcommand{\papersizeswitch}[3]{\ifnum\strcmp{\papersize}{#1}=0#2\else#3\fi}
+\papersizeswitch{b5paper}{\def\classfontsize{11pt}}{\def\classfontsize{11pt}}
+
+\documentclass[\papersize,twoside,showtrims,extrafontsizes]{memoir}
+
+\input{preamble/general}
+\input{preamble/fonts}
+\input{preamble/etc}
+
+
+
+\begin{document}
+
+\prefrontmatter
+\include{prefrontmatter/titlepage}
+\cleartoevenpage
+\include{prefrontmatter/colophon}
+\clearforchapter
+
+\frontmatter
+\include{frontmatter/Summary}
+\include{frontmatter/List_of_Publications}
+\include{frontmatter/Preface}
+\include{frontmatter/Acknowledgements}
+\clearforchapter
+\tableofcontents
+\clearforchapter
+\mylistoftodos
+
+\mainmatter
+\include{chapters/Introduction}
+\include{chapters/Bayesian_ML}
+\include{chapters/Parameter_Space}
+\include{chapters/LongTitle}
+% \include{chapters/paperA_TST/PaperA}
+% \include{chapters/paperB_DE/PaperB}
+% \include{chapters/paperC_UAI/PaperC}
+% \include{chapters/PaperD_VBLLBO/PaperD}
+% \include{chapters/PaperEF_ATEL/PaperEF}
+\include{chapters/Conclusion}
+\include{chapters/Epilogue}
+
+
+\backmatter
+% \printbibliography
+%\renewcommand\bibname{Bibliography of the Background}
+\bibliography{bibliography/Bibliography}
+% \bibliographystyle{plainnat}
+\bibliographystyle{icml2024}
+
+\end{document}

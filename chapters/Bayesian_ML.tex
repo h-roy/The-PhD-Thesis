@@ -1,0 +1,149 @@
+\chapter{Bayesian Deep Learning}
+\label{chap:setting}
+
+\begin{keypointsbox}
+\noindent
+\textbf{Key points (Chapter~\ref{chap:setting}).}
+\begin{enumerate}\setlength{\itemsep}{2pt}
+  \item A review of Bayesian Deep Learning
+
+\end{enumerate}
+\end{keypointsbox}
+
+\begin{center}
+\begin{minipage}{0.95\linewidth}
+\noindent\textbf{Chapter \thechapter\ -- What is the Parameter Space Like:}\par\vspace{3pt}
+
+\begin{tabular}{@{}p{0.83\linewidth}r@{}}
+\hyperref[sec:bml]{\thechapter.1\;\;Bayesian Machine Learning} \dotfill & \pageref{sec:bml}\\
+\hyperref[sec:informal_local_product]{\thechapter.2\;\;Informal picture: Parameter space as a local product space} \dotfill & \pageref{sec:informal_local_product}\\
+\hyperref[subsec:background]{\thechapter.1.2\;\;Background (minimal): Bayes, prediction maps, and identifiability} \dotfill & \pageref{subsec:background}\\
+\hyperref[subsec:parammanifold]{\thechapter.1.3\;\;Parameter manifold and the bundle viewpoint} \dotfill & \pageref{subsec:parammanifold}\\
+\hyperref[sec:sowhat]{\thechapter.2\;\;So what? Geometric quantities and why we care} \dotfill & \pageref{sec:sowhat}\\
+\end{tabular}
+\end{minipage}
+\end{center}
+
+
+
+\noindent This chapter builds the mathematical foundations upon which the presented research rests. The general story of this chapter is quite simple - we present a new viewpoint on the parameter space, which is not merely a Euclidean space, but a smooth fiber bundle. and why we should care about this. We begin each section by providing a brief visual/intuitive picture of what is presented, followed by a rigorous formulation. 
+
+\section{Bayesian Machine Learning}
+\label{sec:bml}
+
+\subsection{General Notation}
+In supervised machine learning, we aim to learn predictive functions from data and its associated labels. The observed data $\bm{x}$ are realizations of some random variable $X \sim p_X$, the associated labels, $\bm{y}$, are a realization of some random variable $Y \sim p_Y$. In such supervised learning settings, a training dataset of $N$ data-label pairs are observed $\mathcal{D} \;=\; \{(x^{(1)},y^{(1)}),\dots,(x^{(N)},y^{(N)})\}$, where $(x^{(n)},y^{(n)})\in \mathcal{X}\times\mathcal{Y}$. We seek to learn a function $h: \mathcal{X} \rightarrow \mathcal{Y}$ that estimates the conditional distribution $p_{Y|X}$. Most supervised learning methods proceed by restricting attention to a hypothesis space of functions, $\mathcal{H}$,  that captures the inductive bias of the learning problem. In this thesis we are primarily concerned with Deep Neural Networks as our hypothesis space. 
+
+\subsection{Bayesian Deep Learning}
+
+\subsection{Approximate Bayesian Inference}
+
+\subsection{Probability and random variables}
+We work on a probability space $(\Omega,\mathcal{F},\mathbb{P})$.
+Random variables are measurable maps into Euclidean spaces.
+We use lowercase letters for realizations and uppercase letters for random variables when needed (e.g.\ $X=x$).
+
+Given two random variables $A,B$, Bayes' rule is
+\begin{equation}
+  p(a\mid b) \;=\; \frac{p(b\mid a)\,p(a)}{p(b)}.
+\end{equation}
+We will repeatedly use the informal slogan:
+\[
+\text{posterior} \;=\; \frac{\text{likelihood}\times\text{prior}}{\text{evidence}}.
+\]
+
+\subsection{Datasets and the i.i.d.\ assumption}
+A dataset is a finite collection of observations
+\begin{equation}
+  \mathcal{D} \;=\; \{d^{(1)},\dots,d^{(N)}\},
+  \qquad
+  d^{(n)} \in \mathcal{Z},
+\end{equation}
+where $\mathcal{Z}$ is the observation space. In supervised learning we write
+\[
+d^{(n)}=(x^{(n)},y^{(n)})\in \mathcal{X}\times\mathcal{Y}.
+\]
+
+Unless stated otherwise, we assume the data are i.i.d.\ draws from an (unknown) data-generating distribution.
+Under this assumption, model likelihoods factorize:
+\begin{equation}
+  p_\theta(\mathcal{D})
+  \;=\;
+  \prod_{n=1}^N p_\theta\!\bigl(d^{(n)}\bigr),
+  \qquad
+  \log p_\theta(\mathcal{D})
+  \;=\;
+  \sum_{n=1}^N \log p_\theta\!\bigl(d^{(n)}\bigr).
+\end{equation}
+
+\subsection{Parametric probabilistic models}
+A (possibly conditional) probabilistic model is a family of distributions indexed by parameters
+\[
+\theta \in \Theta \subseteq \mathbb{R}^P.
+\]
+In \emph{unconditional} modelling, we choose a family $\{p_\theta(x)\}$.
+In \emph{conditional} modelling (regression/classification), we choose a family $\{p_\theta(y\mid x)\}$.
+
+In deep learning, the distributional parameters are produced by a neural network. Concretely, we write
+\begin{equation}
+  u_\theta(x) \;=\; f_\theta(x) \in \mathcal{U},
+  \qquad
+  p_\theta(y\mid x) \;=\; p\bigl(y \mid u_\theta(x)\bigr),
+\end{equation}
+where $\mathcal{U}$ is the model output space (e.g.\ logits, natural parameters, or mean/variance).
+
+\paragraph{Per-datum log-likelihood.}
+For $d=(x,y)$ we define
+\begin{equation}
+  \ell(\theta; d)
+  \;:=\;
+  \log p\bigl(y \mid f_\theta(x)\bigr),
+  \qquad
+  \mathcal{L}_{\mathrm{ML}}(\theta)
+  \;:=\;
+  \sum_{n=1}^N \ell\!\bigl(\theta; d^{(n)}\bigr).
+\end{equation}
+Maximum-likelihood estimation (MLE) is $\hat\theta_{\mathrm{ML}}\in\arg\max_\theta \mathcal{L}_{\mathrm{ML}}(\theta)$.
+
+\subsection{Bayesian inference: prior, posterior, evidence, prediction}
+Bayesian modelling places a \emph{prior} distribution $p(\theta)$ on parameters.
+Given data $\mathcal{D}$, the \emph{posterior} is
+\begin{equation}
+  p(\theta \mid \mathcal{D})
+  \;=\;
+  \frac{p(\mathcal{D}\mid \theta)\,p(\theta)}{p(\mathcal{D})}
+  \;\propto\;
+  p(\mathcal{D}\mid \theta)\,p(\theta),
+\end{equation}
+where the normalizing constant
+\begin{equation}
+  p(\mathcal{D})
+  \;=\;
+  \int_{\Theta} p(\mathcal{D}\mid \theta)\,p(\theta)\,d\theta
+\end{equation}
+is the \emph{marginal likelihood} (or evidence).
+
+The posterior induces the Bayesian \emph{predictive distribution} for a new input $x^\ast$:
+\begin{equation}
+  p(y^\ast \mid x^\ast, \mathcal{D})
+  \;=\;
+  \int_{\Theta} p\!\bigl(y^\ast \mid f_\theta(x^\ast)\bigr)\,p(\theta\mid \mathcal{D})\,d\theta.
+\end{equation}
+
+\paragraph{MAP.}
+Maximum a posteriori estimation solves
+\begin{equation}
+  \hat\theta_{\mathrm{MAP}}
+  \;\in\;
+  \arg\max_{\theta\in\Theta} \Bigl\{\log p(\theta) + \log p(\mathcal{D}\mid \theta)\Bigr\}.
+\end{equation}
+
+\subsection{Approximate inference (preview of later chapters)}
+In modern deep networks, the evidence integral and posterior are rarely tractable.
+This thesis focuses on scalable approximations that still respect the \emph{functional} structure of deep models:
+\begin{itemize}[leftmargin=1.4em,itemsep=0.25em]
+  \item \textbf{Laplace approximations:} locally Gaussian posteriors around $\hat\theta$.
+  \item \textbf{Variational inference:} optimization over distributions $q(\theta)$ (and/or $q(z\mid x)$ in latent-variable models).
+  \item \textbf{Sampling-based surrogates:} approximate the predictive integral by Monte Carlo.
+\end{itemize}
+A recurring object will be the map $\theta \mapsto f_\theta(\cdot)$ and its Jacobians; the geometric viewpoint in later sections will reinterpret these in an intrinsic way.

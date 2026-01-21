@@ -1,0 +1,766 @@
+%!TEX root = ../Thesis.tex
+%\chapter{Long chapter title with $\pi$ $π$ or π}
+%\chapter{Long chapter title with \texorpdfstring{$\pi$ $π$ or π}{π π or π}}
+
+\chapter{Background and Related Work}
+\label{chap:background}
+
+This chapter provides the required knowledge to understand the presented research papers, and presents a long line of previous work that came before it - there is a vast amount of it, but I have tried to represent those works that mine built on or was inspired by. The chapter begins by introducing and motivating \textit{probabilistic modelling} and \textit{Bayesian machine learning} (Section~\ref{sec:BayesianModelling}) as these two subject areas lie at the core of the dissertation and the presented research (if you generally consider yourself Bayesian, then it may be worthwhile skipping this section). I then present deep learning (Section~\ref{sec:deeplearning}) followed by several different variations of Bayesian neural networks and their recent developments (Section~\ref{sec:BNNs}). Hereafter, evaluation methods and metrics for probabilistic models and uncertainty quantification are presented (Section~\ref{sec:eval_metrics}), and finally, two applications and use cases where obtaining calibrated models is important are briefly introduced, namely Bayesian Optimisation and Sequence-to-sequence modelling (Section~\ref{sec:apps_probmodels}).
+
+%I then present two examples of Bayesian machine learning briefly, namely Bayesian linear regression and Gaussian Processes (primarily to illustrate why the Bayesian toolbox is so powerful)
+
+ %two instances of \textit{Bayesian machine learning}, namely \textit{Gaussian processes} [INSERT SECTION REFERENCE] and \textit{Bayesian neural networks} [INSERT SECTION REFERENCE]. Although I have not done methodological research on Gaussian processes, I present them in some detail here because they, in my opinion, can be seen as primary example of Bayesian machine learning, and they provide clear illustrations of why Bayesian statistic is such a powerful toolbox.
+
+\section{Why Bayesian Modelling and Bayesian Machine Learning?}
+\label{sec:BayesianModelling}
+
+At the heart of Bayesian Machine Learning lies probability theory (in particular Bayesian probability theory), for which the key motivation is that of uncertainty. Uncertainty arises in real world problems both from noise on measurements (i.e. irreducible noise in the data generating process, commonly known as \textit{aleatoric} uncertainty) and lack of information (commonly known as \textit{epistemic} uncertainty). To quote Bishop \citep{ChrisBishop_Patterns}, "\textit{probability theory provides a consistent framework for the quantification and manipulation of uncertainty }..." and "\textit{the use of probability is not an ad-hoc choice, but is inevitable if we are to respect common sense while making rational coherent inferences}". These are perhaps strongly worded statements, but nevertheless they ring true: there are uncertainties in all decision making processes, and probability and probability theory allows us to quantify and manipulate those uncertainties. How exactly we manipulate and estimate these probabilities follow mainly two ideologies (although even these are fragmented internally), namely \textit{frequentist} and \textit{Bayesian} statistics. The basic idea in the frequentist approach (also the reason for the naming of the ideology) is to estimate probabilities based on random, repeatable events \citep{ChrisBishop_Patterns}. Therefore parameters of frequentist statistical models are not random quantities and remain fixed and discoverable by repeated observations. Bayesian statistics interprets probabilities as degrees of belief and hence the parameters of a statistical model can also be assigned a probability by updating of prior beliefs via observed information. Bayesian statistics allows us to do this through the famous Bayes' theorem, namely: \\
+
+ %which for one allows us to estimate the probability of unobserved events, which we cannot in frequentist settings.
+
+\begin{equation}
+    \underbrace{p(\mathbf{h}|\mathcal{D})}_{\text{Posterior}}=\frac{\overbrace{p(\mathcal{D}|\mathbf{h})}^{\text{Likelihood}}\overbrace{p(\mathbf{h})}^{\text{Prior}}}{\underbrace{p(\mathcal{D})}_{\text{Evidence}}},
+\end{equation}
+
+\noindent where $\mathbf{h}$ is some quantity of interest (e.g. parameters of a neural network) and $\mathcal{D}$ is some observed data. The denominator, i.e.\ the evidence, is a normalizing constant sometimes referred to as the marginal likelihood which ensures that the posterior integrates to 1. The likelihood is evaluated using the observed dataset $\mathcal{D}$ and is then called a likelihood function, and it is a measure of how likely the observed data is under different values of $\mathbf{h}$. We then have the prior, $p(\mathbf{h})$, which allows us to model prior knowledge about $\mathbf{h}$ in the form of a \textit{prior distribution}. These terms when evaluated in conjunction gives us the \textit{posterior distribution} over $\mathbf{h}$ having observed $\mathcal{D}$, i.e. our prior beliefs updated by the likelihood of the data we have observed. It is for this reason it is often written:
+
+\begin{equation}
+    \text{posterior} \propto \text{likelihood} \times \text{prior}.
+\end{equation}
+
+\noindent One thing of note is that the likelihood function is in fact also used in frequentist statistics, and is typically used to obtain a maximum likelihood estimate (we will return to this later). It will hopefully shortly become clear why and how we use Bayes' theorem in Bayesian Machine Learning, and why it intuitively should allows to create even better models in this setting. To illustrate this, I will throughout this section discuss linear models, Bayesian linear models and Gaussian Processes in the context of a simple supervised regression problem with Gaussian noise\footnote{This section is largely inspired by section 2.1.1 of \cite{Rasmussen2006Gaussian}.}, i.e.:
+
+\begin{equation}
+    y = f(\mathbf{x}) + \epsilon,
+\label{eq:problem_setup}
+\end{equation}
+
+\noindent where $y$ is the observed output value, $f(\mathbf{x})$ is the function value, $\mathbf{x}$ is an input point and $\epsilon$ is observation noise with zero mean and variance $\sigma_{n}^2$, i.e. $\epsilon \sim \mathcal{N}(0, \sigma_{n}^2)$. \\
+
+%To summarize, the strength of Bayesian statistics is two parted. Firstly, it can handle unseen events more robustly than frequentist approaches due to the incorporation of prior believes in our modelling choices and secondly, it allows marginalization as we no longer treat parameters as point estimates, but rather obtain posterior distributions over them. 
+
+%which we cannot with frequentist approaches alone (see [MURPHY REFERENCE] for examples of when frequentist modelling fails).
+
+%\section{Bayesian Machine Learning}
+
+%footnote{We always assume our datasets to be independent and identically distributed throughout this dissertation.}
+
+\noindent Generally speaking, in machine learning we are interested in learning the parameters $\mathbf{w}$ of some chosen model given some dataset $\mathcal{D}$\, which are often chosen as a \textit{point estimate}. In supervised machine learning tasks, at prediction time, this point estimate is then used directly to predict $y^*$ for some new point $\mathbf{x}^*$, i.e. $p(y^*|\mathbf{w}, \mathbf{x}^*)$. In Bayesian Machine Learning we want to learn a \textit{posterior distribution} over $\mathbf{w}$, i.e. $p(\mathbf{w}|\mathcal{D})$ from which we can obtain a \textit{posterior predictive distribution} $p(y^*|\mathbf{x}^*, \mathcal{D})$ by marginalising out $\mathbf{w}$, which takes the form:
+
+\begin{equation}
+    p(y^*|\mathbf{x}^*, \mathcal{D}) = \int p(y^*|\mathbf{x}^*, \mathbf{w}, \mathcal{D})p(\mathbf{w}|\mathcal{D})d\mathbf{w}.
+\end{equation}
+
+\noindent This marginalisation is, along with prior specification, one of the main motivators for Bayesian machine learning. To summarise the power of being Bayesian: Firstly, in principle, it gives us the ability to incorporate prior knowledge in our models, allowing us to "steer" the final model parameters and allowing us to predict \textit{reasonably well} on unseen data. Secondly, the marginalisation over the posterior distribution over $\mathbf{w}$ at prediction time, should provide us with more robust predictions as we no longer simply rely on a point estimate of $\mathbf{w}$, but rather average across all possible $\mathbf{w}$, weighted by their likelihood under $\mathcal{D}$. To fully illustrate this, we firstly consider simply using a linear model for the regression problem described in Equation \ref{eq:problem_setup}, i.e.:
+
+\begin{equation}
+    f(\mathbf{x}) = \mathbf{x}^\top\mathbf{w},
+    \label{eq:lin_model}
+\end{equation}
+
+\noindent which under the Gaussian noise assumption directly leads us to a Gaussian likelihood:
+
+\begin{equation}
+    p(\mathbf{y}|\mathbf{X}, \mathbf{w}) =\mathcal{N}(\mathbf{y}|\mathbf{X}^\top\mathbf{w},\sigma_n^2I).
+    \label{eq:likelihood}
+\end{equation}
+
+%= \prod^n_{i=1}p(y_i|\mathbf{x}_i, \mathbf{w})=\prod^n_{i=1}\frac{1}{\sqrt{2\pi}\sigma_n}\text{exp}\left(-\frac{(y_i-\mathbf{x}_i^\top\mathbf{w}^2}{2\sigma_n^{2}}\right)
+
+\noindent where $\mathbf{y} \in \mathbb{R}^n$ is the collection of all training targets in a vector and $\mathbf{X}\in \mathbb{R}^{d\times n}$ is the aggregation of all training inputs in a so called design matrix. In the frequentist setting this would be enough, and by maximizing the log-likelihood\footnote{applying the logarithm to Equation \ref{eq:likelihood}.} w.r.t. $\mathbf{w}$, which can be done in closed form solution for linear regression, we would have our parameter estimate. In Bayesian modelling however, we have to select a prior, and here we select it to be Gaussian, i.e. $p(\mathbf{w})\sim \mathcal{N}(\mathbf{0}, \bm\Sigma_w)$, which in turn gives rise to a Gaussian posterior (due to the conjugacy of the Gaussian likelihood and prior):
+
+\begin{equation}
+    p(\mathbf{w}|\mathbf{X},\mathbf{y}) = \mathcal{N}(\mathbf{w}\big|\frac{1}{\sigma_n^2}\mathbf{A}^{-1}\mathbf{X}\mathbf{y}, \mathbf{A}^{-1}),
+    \label{eq:posterior_w_lin}
+\end{equation}
+
+\noindent where $\mathbf{A} = \sigma_n^{-2}\mathbf{X}\mathbf{X}^\top + \bm\Sigma_w^{-1}$. For this particular choice of likelihood and prior, this is actually directly equivalent to the frequentist maximum likelihood estimator of a linear regressor with L2-regularization commonly known as ridge regression. It also happens that for any Gaussian posterior, the mode and mean coincide and this is therefore commonly known as the \textit{maximum a posteriori} (MAP) estimate of the parameter $\mathbf{w}$. It can also be seen directly from Equation \ref{eq:posterior_w_lin}, that if we multiply $\bm\Sigma_{w}$ by a scalar $\beta$ and increase it to infinity (i.e. obtaining an "improper" uniform prior), then the posterior of the weights collapses to the maximum likelihood estimator previously discussed. Finally, to make predictions for new $\mathbf{x^*}$ after obtaining $p(\mathbf{w}|\mathcal{D})$ from our training set, we marginalise over $p(\mathbf{w}|\mathcal{D})$ and obtain the following posterior predictive distribution:
+
+\begin{equation}
+    p(f^*|\mathbf{x}^*, \mathcal{D}) = \int p(f^*\big|\mathbf{x}^*, \mathbf{w}, \mathcal{D})p(\mathbf{w}|\mathcal{D})d\mathbf{w}=\mathcal{N}(f^*\big|\frac{1}{\sigma_n^2}\mathbf{x}^{*\top}\mathbf{A}^{-1}\mathbf{X}\mathbf{y}, \mathbf{x}^{*\top}\mathbf{A}^{-1}\mathbf{x}^*).
+\end{equation}
+
+\noindent Thus we can make Gaussian predictions with homoscedastic predictive uncertainty, i.e.
+
+\begin{equation}
+\label{sec:posterior_predictive_gauss}
+    p(y^*|f^*, \mathbf{x}^*, \mathcal{D}) = \mathcal{N}(y^*\big|\frac{1}{\sigma_n^2}\mathbf{x}^{*\top}\mathbf{A}^{-1}\mathbf{X}\mathbf{y},\underbrace{ \mathbf{x}^{*\top}\mathbf{A}^{-1}\mathbf{x}^*}_{\text{Epistemic}} + \overbrace{\sigma_n^2}^{\text{Aleatoric}}),
+\end{equation}
+
+\noindent where we have marked the aleatoric and epistemic uncertainty terms (note that with MLE, we would only have aleatoric uncertainty). \\
+
+\noindent So far we have only considered a single model, i.e. the Bayesian linear regressor, but in many applications one is presented with the choice of model or choice of hyperparameter values. In the Bayesian linear regression model this could be the features we use, i.e. some subset of all the available features or the prior covariance $\bm\Sigma_w$. Another example could be if we consider a polynomial regressor where one must select the degree of the polynomial model. In the Bayesian framework, one can pick the model that maximises the evidence or marginal likelihood, i.e. the likelihood after marginalising out the parameters \citep{MacKay1996}, namely
+
+\begin{equation}
+    p(\mathcal{D}) = \int p(\mathcal{D}|\mathbf{w})p(\mathbf{w})d\mathbf{w}.
+    \label{eq:marglike}
+\end{equation}
+
+ \noindent More concretely, we can write the posterior distribution over $\mathbf{w}$ as   
+
+\begin{equation}
+    p(\mathbf{w}|\mathcal{D}, \mathcal{M}_i) = \frac{p(\mathcal{D}|\mathbf{w}, \mathcal{M}_i)p(\mathbf{w}|\mathcal{M}_i)}{p(\mathcal{D}|\mathcal{M}_i)} 
+\end{equation}
+
+\noindent and then write Equation \ref{eq:marglike} as 
+
+\begin{equation}
+    p(\mathcal{D}|\mathcal{M}_i) = \int p(\mathcal{D}|\mathbf{w})p(\mathbf{w}|\mathcal{M}_i)d\mathbf{w}.
+\end{equation}
+
+\noindent In a fully Bayesian treatment of our models we would place priors on our hyperparameters and also marginalise these out when making predictions, but this is not possible to do in practice due to intractability. However, it is instead possible to approximate this fully Bayesian treatment by setting hyperparameters to values that maximize the marginal likelihood, which has many names including \textit{emperical Bayes} \citep{bernardo2009bayesian}, \textit{type II maximum likelihood} \citep{berger1985statistical} or \textit{evidence approximation} \citep{MacKay1996}. In this framework, we assume a relatively flat distribution over $\mathcal{M}$, and thus maximising $p(\mathcal{D}|\mathcal{M})$ is equivalent to maximising the posterior over the hyperparameters $p(\mathcal{M}|\mathcal{D})$. Thus we can optimize and select the hyperparameters of our model by finding the hyperparameters that maximises $p(\mathcal{D}|\mathcal{M})$, giving us the maximum of $p(\mathcal{M}|\mathcal{D})$. Evaluating $p(\mathcal{D}|\mathcal{M})$ is for many models difficult or intractable so one must rely on approximations, but we will shortly see how this is useful in some Bayesian models, in particular in Gaussian Processes.
+
+\subsection{Gaussian Processes}
+\label{sec:GPs}
+From Bayesian linear regression there is an elegant and approachable introduction to Gaussian Processes from the weight space as presented in \cite{Rasmussen2006Gaussian}, which we provide here as the final motivation for Bayesian modelling. An issue with Bayesian linear regression is of course that the model is not particularly flexible (as it is linear in the parameters), and therefore one may consider using some basis functions to project $\mathbf{x}$ onto and perform Bayesian linear regression in this space. Thus, if we define the basis functions as $\bm\phi(\mathbf{x})$, our model from Equation \ref{eq:lin_model} then becomes:
+
+ \begin{equation}
+     f(\mathbf{x}) = \bm\phi(\mathbf{x})^\top\mathbf{w},
+ \end{equation}
+
+\noindent which is now just linear in the projections $\bm\phi(\mathbf{x})$. If the basis functions are fixed, then the linear model is still analytically tractable, and the posterior predictive becomes
+
+\begin{equation}
+    p(f^*|\mathbf{x}^*, \mathcal{D}) = \mathcal{N}\left(f^*\middle|\frac{1}{\sigma_n^2}\bm\phi(\mathbf{x}^*)^\top \mathbf{A}^{-1}\bm\Phi(\mathbf{X})\mathbf{y}, \bm\phi(\mathbf{x}^*)^\top \mathbf{A}^{-1}\bm\phi(\mathbf{x}^*)\right),
+    \label{eq:feature_space_kernel}
+\end{equation}
+
+\noindent where $\bm\Phi(\mathbf{X})$ is the collection of $\bm\phi(\mathbf{x})$ for all training points and $\mathbf{A} = \sigma_n^{-2}\bm\Phi(\mathbf{X}) \bm\Phi(\mathbf{X})^\top+\bm\Sigma_w^{-1}$. Since we are typically only interested in the function values $f$ rather than the feature space itself, a convenient (and quite extensive) rewriting of Equation \ref{eq:feature_space_kernel} allows us to remove any explicit feature space projections. We do this by first obtaining
+
+\begin{align}
+\begin{split}
+    p(f^*|\mathbf{x}^*, \mathcal{D}) = \mathcal{N}(f^*\big|&\bm\phi(\mathbf{x}^*)^\top\bm\Sigma_w\bm\Phi(\mathbf{X})(\mathbf{K}+\sigma_n^2\mathbf{I})^{-1}\mathbf{y}, \\
+    &\bm\phi(\mathbf{x}^*)^\top\bm\Sigma_w\bm\phi(\mathbf{x}^*)\\
+    &-\bm\phi(\mathbf{x}^*)^\top\bm\Sigma_w\bm\Phi(\mathbf{X})(\mathbf{K}+\sigma_n^2\mathbf{I})^{-1}\bm\Phi(\mathbf{X})^\top\bm\Sigma_w\bm\phi(\mathbf{x}^*),
+\end{split}
+\end{align}
+
+\noindent where $\mathbf{K}=\bm\Phi(\mathbf{X})^\top\bm\Sigma_w\bm\Phi(\mathbf{X})$. The key observation is that the projected feature space now only appears in terms of inner products with respect to $\bm\Sigma_w$, which means that $f$ now operates in an \textit{implicit} feature space, and thus we do not have to project our input points into this space any longer. Additionally, if we define $\bm\psi(\mathbf{x})=\bm\Sigma_w^{1/2}\bm\phi(\mathbf{x})$, we can then define $k(\mathbf{x},\mathbf{x}')=\bm\psi(\mathbf{x})\cdot\bm\psi(\mathbf{x}')$, which is commonly known as the \textit{kernel trick}. Using this, the posterior predictive then becomes:
+
+\begin{align}
+\begin{split}
+    p(f^*|\mathbf{x}^*, \mathcal{D}) = \mathcal{N}(f^*\big|&\mathbf{k}(\mathbf{x}^*,\mathbf{X})(\mathbf{K}+\sigma_n^2\mathbf{I})^{-1}\mathbf{y}, \\
+    &k(\mathbf{x}^*,\mathbf{x}^*)-\mathbf{k}(\mathbf{x}^*,\mathbf{X})^\top(\mathbf{K}+\sigma_n^2\mathbf{I})^{-1}\mathbf{k}(\mathbf{x}^*,\mathbf{X})),
+    \label{eq:posterior_pred_kernel}
+\end{split}
+\end{align}
+
+\noindent where $\mathbf{k}(\mathbf{x}^*,\mathbf{X})$ is a vector of covariances between the test point $\mathbf{x}^*$ and the training points $\mathbf{X}$. Generally, a GP is specified by its mean and covariance function, although we often choose to model the mean function as $0$ as it simplifies the notation of the model (and does not restrict the model function). The GP is therefore typically written as
+
+\begin{equation}
+    f(\mathbf{x}) \sim \mathcal{GP}\left(\mathbf{0}, k(\mathbf{x}, \mathbf{x}')\right),
+\end{equation}
+
+\noindent where it, along with Equation \ref{eq:posterior_pred_kernel}, is clear that the kernel choice, and thus prior knowledge is one of the driving mechanisms in GPs. One should note that in most kernels there are hyperparameters that one must select, but conveniently one can use the previously discussed marginal likelihood to optimize these hyperparameters. This is particularly convenient in Gaussian Process regression models where the marginal likelihood can be obtained in closed form. We in particular have
+
+\begin{equation}
+    \log p(\mathbf{y}|\mathbf{X}, \bm{\nu})=-\frac{1}{2}\mathbf{y}^\top(\mathbf{K}+\sigma_n^2\mathbf{I})^{-1}\mathbf{y}-\frac{1}{2}\log|\mathbf{K}+\sigma_n^2\mathbf{I}|-\frac{n}{2}\log 2\pi
+\end{equation}
+
+\noindent where $n$ is the number of training datapoints and $\bm{\nu}$ are the kernel hyperparameters. Optimising this (for example via gradient optimisation) is widely used for hyperparameter optimisation in GPs and is typically referred to as type II maximum likelihood \citep{Rasmussen2006Gaussian}.\\
+
+\noindent The presentation on GPs in this chapter is a brief one, that is mainly supposed to serve as a motivator for Bayesian machine learning as well as giving a historical perspective on one of the most popular types of Bayesian machine learning. There is a vast amount of research that concerns itself with the extension and development on GPs, the majority of which is not presented here (and still being developed on today). For reference, this includes topics as kernel design and specification \citep{2011_additivekernel, 2017_convgp, groth2024kermutcompositekernelregression}, scaling of GPs \citep{2005_inducingpoints, 2020_reducedRankGPR, 2023_hilbertspace}, approximate inference for non-Gaussian likelihoods \citep{1998_GPLaplace, 2001_EP} and extensions of GPs \citep{2003_GPLVM,2013_DGP}.  \\ 
+
+% [INCLUDE THIS] 
+
+\noindent The examples of the linear models and GPs provided in this section are supposed to illustrate how we can use the prior to guide the posterior predictive and impose functional behaviours onto our model that we have pre-existing knowledge of how should look. Additionally, it also highlights the power of marginalisation over the posterior $p(\mathbf{w}|\mathcal{D})$, which is in large part the (in my opinion) best and most clear motivation for why Bayesian Deep Learning should give us better uncertainty estimation. The power of the prior is especially clear in Gaussian Processes where we notice from the posterior predictive that the kernel we select directly controls the form of functions our model can take, and thus allows us to directly specify our prior knowledge about the final predictive function via the kernel. When we then observe data, we can update our posterior according to Bayes rule, which is a conditioning of the prior to fit the data we have observed. Similarly, we have seen the power of marginalisation and posterior distributions over $\mathbf{w}$ as they allow us to obtain epistemic uncertainty estimations. We will next take a look at recent literature and methods in Bayesian Deep Learning, i.e. Bayesian methods for deep learning which is the core area of methodological interest in this dissertation.\\
+
+%In Figure [INSERT FIGURE REFERENCE] there are functions draws illustrated from a Gaussian Process prior with a squared exponential kernel, and in Figure [INSERT FIGURE REFERENCE] there are function draws illustrated from the posterior predictive after having conditioned on a few observed points. Note how the samples of the prior appear of random form and have very large uncertainty estimates across the whole input space, but how observing a few points and condition the posterior predictive over these input points has restricted the functions to pass through these datapoints.
+
+% For completeness, here I present the typical way of presenting and discussing GPs, i.e. from the function-space view. Gaussian processes specify a distribution over functions, formalized here [GP RASMUSSEN]:
+
+% \begin{definition}
+%     A Gaussian process is a collection of random variables, any finite number of which have a joint Gaussian distribution.
+% \end{definition}
+
+
+\section{Deep Learning}
+\label{sec:deeplearning}
+
+ In this section I will just briefly outline deep learning\footnote{When discussing deep learning, we are referring to the usage and learning of parameters in neural networks with two or more hidden layers \citep{Goodfellow-et-al-2016}.} and show that there is a probabilistic interpretation of the most commonly used loss functions which will become useful later.\\
+ 
+\noindent In deep learning, we are interested in learning a function $f_{\bm{\theta}}$: $\mathcal{X}\rightarrow\mathcal{Y}$, where $\mathcal{X}$ and $\mathcal{Y}$ define the input space and output space respectively, and $f$ is parameterised by a neural network with parameters $\bm{\theta}$. The mathematical form of the network can be described by
+
+\begin{align}
+    f_{\bm{\theta}}(\mathbf{x}) & = \mathbf{w}^L\mathbf{z}^L(\mathbf{x})+\mathbf{b}^L& \\
+    \mathbf{z}^{l+1}(\mathbf{x}) & = a^{l+1}(\mathbf{w}^l\mathbf{z}^{l}(\mathbf{x})+\mathbf{b}^{l}) & \text{for} \quad 0 \leq l \leq L-1\\
+    \mathbf{z}^0(\mathbf{x}) & = \mathbf{x}
+\end{align}
+
+\noindent where $a$ is some chosen non-linear activation function, $L$ is the depth of the network, and the learnable parameters in the network are $\bm{\theta}=\{\mathbf{w}^0, .., \mathbf{w}^L, \mathbf{b}^0, .., \mathbf{b}^L \}$. To learn these parameters one must use some cost or error function to minimise in order to find the optimal set of parameters given some training dataset $\mathcal{D}$. Unlike the previously discussed case of linear regression, there exists no closed form solution for the optimal parameters $\bm{\theta}$ given $\mathcal{D}$. Therefore we instead find an optimum by performing (stochastic)\footnote{It does not \textit{have} to be stochastic, but it is of course stochastic when we train with mini-batching.} gradient descent along the gradient of the error function with respect to the parameters of the neural network according to the rules of backpropagation \citep{backprop}. More formally given loss function $\mathcal{L}(\bm{\theta}, \mathcal{D})$, we want to find
+
+\begin{equation}
+    \bm{\theta}^* = \underset{\bm{\theta} \in \bm{\Theta}}{\arg \min} \mathcal{L}(\bm{\theta}, \mathcal{D}),
+\end{equation}
+
+\noindent which is done by iteratively updating the parameters $\bm{\theta}$ according to
+
+\begin{equation}
+    \bm{\theta}^{t+1} = \bm{\theta}^t - \eta\nabla\mathcal{L}(\bm{\theta}^t, \mathcal{B}),
+\end{equation}
+
+\noindent where $\eta$ is a learning step hyperparameter, and $\mathcal{B}$ indicates a data mini-batch as we for large models and large datasets cannot compute the predictions all in one go due to memory constraints\footnote{Additionally, there has also been shown benefits of using small batches rather than large batches \citep{Masters2018RevisitingSB} and it is generally known that batching is simply more effective for training.}. \\
+
+\noindent The choice of the error function $\mathcal{L}$ is dependant on the task at hand, and we will look specifically at regression and classification tasks and how the typically selected loss functions for these tasks have a probabilistic interpretation. \\
+
+\subsection{Loss Functions and Their Probabilistic Interpretations}
+\label{sec:losses_and_prob}
+
+
+ If we for a minute ignore our interest in probabilistic inference and modelling, and instead assume we as a practitioner simply want to train a neural network for a regression task, the sum-of-squares error function is perhaps the most commonly chosen error function and is given by
+
+\begin{equation}
+    E(\mathbf{\bm{\theta}}) = \frac{1}{2}\sum^N_{n=1}||f_{\bm{\theta}}(\mathbf{x}_n)-y_n||^2.
+    \label{eq:MSE_Loss}
+\end{equation}
+
+\noindent In order to improve generalization and reduce overfitting, the practitioner may take the choice of adding a typical L2-norm regularizer to Equation \ref{eq:MSE_Loss} which then becomes
+
+\begin{equation}
+    E(\mathbf{\bm{\theta}}) = \frac{1}{2}\sum^N_{n=1}||f_{\bm{\theta}}(\mathbf{x}_n)-y_n||^2 + \lambda||\bm{\theta}||^2_2,
+    \label{eq:MSE_Loss_reg}
+\end{equation}
+
+\noindent where $\lambda$ is a hyperparameter choosing the degree of regularization. What the practitioner may not be aware of, is that minimizing Equation \ref{eq:MSE_Loss} is directly equivalent to performing maximum likelihood estimation (MLE) under a Gaussian likelihood (with homoscedastic noise) and minimizing Equation \ref{eq:MSE_Loss_reg} is equivalent to performing maximum a-posteriori (MAP) estimation under a Gaussian likelihood and Gaussian prior with variance $\frac{\lambda^{-1}}{2}\mathbf{I}$. We can first show this for MLE by starting with assuming that $y$ follows a Gaussian distribution in which the mean is $\mathbf{x}$ dependent and parametrized by the network parameters $\bm{\theta}$, i.e. 
+
+\begin{equation}
+    p(y|\mathbf{x}, \bm{\theta}) = \mathcal{N}(y|f_{\bm{\theta}}(\mathbf{x}), \sigma^2)
+\end{equation}
+
+\noindent for which the likelihood function used on dataset $\mathcal{D}$ of length $N$ is
+
+\begin{equation}
+    p(\mathbf{y}|\mathbf{X}, \bm{\theta}, \sigma^2) = \prod^N_{n=1}p(y_n|\mathbf{x}, \bm{\theta}, \sigma^2).
+    \label{eq:likelihood_mle_regression}
+\end{equation}
+
+\noindent Taking the negative logarithm of Equation \ref{eq:likelihood_mle_regression} we obtain
+
+\begin{align}
+    -\log p(\mathbf{y}|\mathbf{X}, \bm{\theta}, \sigma^2) & = -\sum^N_{n=1}\log \left(\frac{1}{\sqrt{2\pi\sigma^2}}\text{exp}-\frac{(f_{\bm{\theta}}(\mathbf{x}_n)-y_n)^2}{2\sigma^2}\right)\\
+    &= \frac{1}{2\sigma^2}\sum^N_{n=1}(f_{\bm{\theta}}(\mathbf{x}_n)-y_n)^2+\frac{N}{2}\log 2\pi\sigma^2,
+\end{align}
+
+\noindent which we can easily see that the minimum coincides with the minimum of Equation \ref{eq:MSE_Loss} as the second term is constant. Showing this for MAP is also simple, starting with the posterior over the parameters which is 
+
+\begin{equation}
+    p(\bm{\theta}|\mathcal{D})\propto p(\mathcal{D}|\bm{\theta})p(\bm{\theta}) = \prod^N_{n=1}p(y_n|\mathbf{x}_n,\bm{\theta})p(\bm{\theta}).
+\end{equation}
+
+\noindent Taking the negative logarithm of the posterior we have 
+
+\begin{equation}
+\begin{split}
+    -\log p(\bm{\theta}|\mathcal{D})\propto -\sum^N_{n=1}\log p(y_n|\mathbf{x}_n,\bm{\theta})+\log p(\bm{\theta}),
+\end{split}
+\label{eq:posterior_theta_regression}
+\end{equation}
+
+\noindent and given the Gaussian prior $p(\bm{\theta})=\mathcal{N}(\bm{\theta}|\mathbf{0}, \frac{\lambda^{-1}}{2}\mathbf{I})$, and taking the negative logarithm and rearranging term yields:
+
+\begin{equation}
+\begin{split}
+    -\log \mathcal{N}(\bm{\theta}|\mathbf{0}, \frac{1}{2\lambda}\mathbf{I}) & = -\log \left(\frac{1}{(2\pi)^{k/2}|\frac{\lambda^{-1}}{2}\mathbf{I}|^{1/2}}\text{exp}-\frac{1}{2}\bm{\theta}^T(\frac{\lambda^{-1}}{2}\mathbf{I})^{-1}\bm{\theta}\right)\\
+    & = \frac{k}{2}\log 2\pi+\frac{k}{2}\log \frac{1}{2\lambda}+\lambda||\bm{\theta}||^2_2,
+\end{split}
+\label{eq:prior_theta_gauss}
+\end{equation}
+
+\noindent where $k$ is the dimensionality of $\bm{\theta}$. Plugging Equations \ref{eq:likelihood_mle_regression} and \ref{eq:prior_theta_gauss} into Equation \ref{eq:posterior_theta_regression} we obtain
+
+\begin{equation}
+    -\log p(\bm{\theta}|\mathcal{D}) = \frac{1}{2\sigma^2}\sum^N_{n=1}(f_{\bm{\theta}}(\mathbf{x}_n)-y_n)^2+\frac{N}{2}\log 2\pi\sigma^2 + \frac{k}{2}\log 2\pi+\frac{k}{2}\log \frac{1}{2\lambda}+\lambda||\bm{\theta}||^2_2,
+\end{equation}
+
+\noindent from which we can see that, ignoring multiplicative and additive constants, has the same optimum as in Equation \ref{eq:MSE_Loss_reg}.\\
+
+\noindent  Showing that this equivalence exists in classification for cross-entropy loss and categorical likelihood is simple. To do this, we briefly consider a binary classification setting in which we have two classes $C$, but therefore only require one output from our neural network in which the output $f_{\bm{\theta}}$ has been squished through a sigmoid function to obtain class probability. Here, the typically used binary cross-entropy loss function is specified as:
+
+\begin{equation}
+    \mathcal{L}(\bm{\theta})=-\sum^N_{n=1}y_n\log f_{\bm{\theta}}(\mathbf{x}_n)+(1-y_n)\log (1-f_{\bm{\theta}}(\mathbf{x}_n)),
+\end{equation}
+
+\noindent where it is possible to add L2 norm regularization on the weights as in Equation \ref{eq:MSE_Loss_reg}. From the probabilistic modelling perspective, the likelihood function for this binary classification setting would be a Bernoulli likelihood:
+
+\begin{equation}
+    p(\mathcal{D}|\bm{\theta}) = \prod^N_{n=1}f_{\bm{\theta}}(\mathbf{x}_n)^{y_n}(1-f_{\bm{\theta}}(\mathbf{x}_n))^{1-y_n},
+\end{equation}
+
+\noindent and again, by taking the negative log of this we trivially obtain
+
+\begin{equation}
+    \mathcal{L}(\bm{\theta})=-\sum^N_{n=1}y_n\log f_{\bm{\theta}}(\mathbf{x}_n)+(1-y_n)\log (1-f_{\bm{\theta}}(\mathbf{x}_n)).
+    \label{eq:mle_class}
+\end{equation}
+
+\noindent For which optimizing $\bm{\theta}$ for the minimum of Equation \ref{eq:mle_class} is of course the MLE, and adding the Gaussian prior term is the MAP estimate. \\
+
+\noindent To summarize, the probabilistic framework and modelling that we can perform using Bayes theorem is in fact already motivated by the most commonly used loss functions and some of the most commonly used regularization methods in regular neural network training. However, up until now we have only looked at obtaining point estimates of parameters. What we really would like to do is to marginalise over multiple possible weight parameters that fit our data. However, due to the fact that the marginal likelihood is not tractable in neural networks with non-linearities, we have to rely on approximation methods, which is what we will discuss next.
+
+\section{Bayesian Neural Networks}
+\label{sec:BNNs}
+
+In Bayesian Neural Networks, we are now no longer only interested in obtaining point estimates for $\bm{\theta}$, but want to obtain posterior distributions i.e. $p(\bm{\theta}|\mathcal{D})$. Perhaps the main argument for wanting to obtain such posterior distribution is that of marginalisation \citep{2020_AGWCaseBNN}. We know that given overparametrized neural networks and finite training data, the loss landscape of the neural networks have many so-called "valleys" in which the training loss is at a minimum, but the predictive distributions of the neural network are meaningfully different \citep{2018_GaripovLossValleys}. Intuitively, it seems that averaging over such solutions (weighted by their plausability) should not only give us predictive distributions that generalize better, but equally important, better calibrated models - and this is exactly what marginalisation over a posterior distribution allows us to do. There is perhaps also an argument to be made for the importance of priors in neural networks, but specifying \textit{informative} priors in weight space beyond that of a Gaussian (equivalent to L2 norm regularization) is highly non-trivial and can have high impact on model performance \citep{2016_PACBayesPriors, 2018_InvariancesPriorWilk, 2022_revisingBNNPriors}. For this reason, there are also works that try to specify priors in the function space such as in \cite{2024_functionalpriorslaplace}. \\
+
+\noindent To return to the question of \textit{how} to obtain $p(\bm{\theta}|\mathcal{D})$ in the case of Bayesian neural networks, we must turn to \textit{approximate Bayesian inference} due to the intractability of the marginal likelihood. The key idea in approximate inference is that we choose a class of distributions as our approximate family, and the approximate inference method must then select a member of this family as the best approximating distribution. The gold standard for approximate inference in Bayesian Neural Networks is Hamiltonian Monte Carlo (HMC) sampling \citep{1987_HybridMC, neal1996hmc}. HMC is a version of Markov Chain Monte Carlo sampling in which the proposals are not entirely random, but rather informed of the true distribution $p(\mathbf{x})$ through its gradient, which is elegantly done by the application of Hamiltonian dynamics \citep{hamilton1833general} and use of an auxiliary variable. Although HMC is guaranteed to converge to the true posterior (even if multi-modal!) with enough sampling, doing this for large neural networks is highly impractical. One of the largest experiments and works applying HMC to neural networks is \cite{Izmailov2021WhatAB} where the authors explain that they sometimes had to train for more than \textit{60 million epochs} on CIFAR-10 for their models to converge, which in practice is highly impractical (some would say impossible for most training scenarios), and even here some have argue that the full true posterior distribution is not being fully explored \citep{SharmaFNR23}. Because of this immense cost of HMC we must often rely on cruder approximations that are more practical.\\
+
+\noindent One such approximation method is \textit{variational inference} (VI) \citep{1998_JordanVI, 2003_Beal}, in which the main concept is to select some approximating distribution $q(\bm{\theta}|\bm\phi)$ (where $\bm\phi$ are the learnable parameters of the approximate distribution) to approximate the true posterior $p(\bm{\theta}|\mathcal{D})$ by maximising the evidence lower bound (ELBO)\footnote{This is because maximising the ELBO minimises the KL-divergence between the true posterior $p(\bm\theta|\mathcal{D})$ and the approximate posterior $q(\bm\theta|\bm\phi)$. We will derive a special case of this later in this section.}  which has the form
+
+\begin{equation}
+    \mathcal{L}(\phi)= \sum^N_{n=1}\mathbb{E}_{q(\bm{\theta}|\bm\phi)}\left[\log p(y_n|f_{\bm{\theta}}, \mathbf{x}_n)\right] - \text{KL}[q(\bm{\theta}|\bm\phi)||p(\bm{\theta})],
+\end{equation}
+
+\noindent where KL is the Kullback–Leibler divergence between the approximate posterior $q(\bm{\theta}|\bm\phi)$ and the prior $p(\bm{\theta})$. In VI for Bayesian neural networks \citep{2015_BayesByBack}, the approximate posterior is often chosen to be a mean-field Gaussian distribution (referred to as mean-field variational inference (MFVI)) which assumes diagonal covariance of the Gaussian, i.e. $q(\bm{\theta}|\bm\phi)=\mathcal{N}(\bm{\theta}|\mathbf{\mu}_\phi, \mathbf{\sigma}^2_\phi)$ with $\mu_\phi, \sigma_\phi \in \mathbb{R}^k$ where $k$ is the number of parameters in the neural network. Although convenient from both an optimisation and implementation perspective, MFVI has seen limited success in the literature and is often difficult to get to work, requiring many "tricks" to properly optimize the ELBO without losing predictive performance \citep{2018_WuVI, 2020_FoongMFVI, 2020_radialMFVI}. We will shortly take a look at some other approximate inference methods for BNNs which have recently gained much popularity in the literature, but first we will briefly discuss how to obtain a posterior predictive distribution once the posterior $q(\bm{\theta}|\bm\phi)$ has been obtained. \\
+
+\noindent We quickly recall that having obtained a posterior distribution $p(\bm{\theta}|\mathcal{D})$, we must marginalise out our posterior distribution to obtain a posterior predictive distribution, i.e.
+
+\begin{equation}
+    p(y^*|\mathbf{x}^*, \mathcal{D}) = \int p(y^*|x^*, \bm{\theta}, \mathcal{D})p(\bm{\theta}|\mathcal{D})d\bm{\theta}.
+\end{equation}
+
+\noindent However, for most BNNs this integral must also be approximated as it generally speaking is intractable due to the dimensionality of $\bm{\theta}$. Although there exists alternative ways of approximating the posterior predictive, the most commonly used approximation is Monte Carlo integration which takes the form
+
+\begin{equation}
+    p(y^*|\mathbf{x}^*, \mathcal{D}) = \int p(y^*|x^*, \bm{\theta}, \mathcal{D})p(\bm{\theta}|\mathcal{D})d\bm{\theta} \approx \frac{1}{S}\sum^S_{s=1}p(y^*|\mathbf{x},\bm{\theta}^s)
+\end{equation}
+
+\noindent where $\bm{\theta}^s\sim p(\bm{\theta}|\mathcal{D})$. Luckily such approximations, even for large models tend to converge quickly with a relatively low number of samples \citep{2003_MacKayBNN}. As such it can be seen how the main hurdle of BNNs is methods for obtaining accurate approximate posterior approximations $q(\bm{\theta}|\mathcal{D})$, some of which I will be presenting next.
+
+\subsection{Laplace Approximation}
+\label{sec:LAPLACE}
+Firstly, we take a look at the Laplace approximations for BNNs as originally proposed by MacKay \citep{1992_MacKay}. The Laplace approximation \citep{1774_Laplace} in its general formulation approximates the true posterior distribution $p(\mathbf{h}|\mathcal{D})$ by placing a Gaussian at the mode of the true posterior distribution i.e. $q(\mathbf{h}|\mu, \Sigma)$ where $\mu$ is the mode of $p(\mathbf{h}|\mathcal{D})$ and $\Sigma$ is obtained by a second-order Taylor expansion around the mode. Conveniently, as we have seen in Section \ref{sec:losses_and_prob}, in neural network training we can find the mode of $p(\bm{\theta}|\mathcal{D}$) by doing MAP training with stochastic gradient descent. It is then possible to perform a Taylor expansion of $\mathcal{L}=\log p(y|f_{\bm\theta}(\mathbf{x}))$ around $\bm{\theta}_{\text{MAP}}$ as an approximation to $p(\bm{\theta}|\mathcal{D})$ obtaining
+
+\begin{equation}
+    \log p(\bm{\theta}|\mathcal{D})=\mathcal{L}(\bm{\theta}, \mathcal{D}) \approx \mathcal{L}(\bm{\theta}_{\text{MAP}}, \mathcal{D}) - \frac{1}{2}(\bm{\theta}-\bm{\theta}_{\text{MAP}})^\top \mathcal{H} (\bm{\theta}-\bm{\theta}_{\text{MAP}}),
+    \label{eq:laplace_approx_bnn}
+\end{equation}
+
+\noindent where the first order term of the Taylor expansion disappears due to the expansion being around a mode, and $\mathcal{H}$ is the Hessian of $\mathcal{L}$ around the mode. If we exponentiate Equation \ref{eq:laplace_approx_bnn}, we obtain
+
+\begin{align}
+    \text{exp}\mathcal{L}(\bm{\theta}, \mathcal{D}) & \approx \text{exp}\left(\mathcal{L}(\bm{\theta}_{\text{MAP}}, \mathcal{D}) - \frac{1}{2}(\bm{\theta}-\bm{\theta}_{\text{MAP}})^\top \mathcal{H} (\bm{\theta}-\bm{\theta}_{\text{MAP}})\right) \\
+    & = \text{exp}(\mathcal{L}(\bm{\theta}_{\text{MAP}}, \mathcal{D}))\text{exp}\left(-\frac{1}{2}(\bm{\theta}-\bm{\theta}_{\text{MAP}})^\top \mathcal{H} (\bm{\theta}-\bm{\theta}_{\text{MAP}})\right),
+\end{align}
+
+\noindent from which we can also approximate the normalizing constant $Z$ according to
+
+\begin{align}
+    Z & \approx \text{exp}(\mathcal{L}(\bm{\theta}_{\text{MAP}}, \mathcal{D}))\int_{\bm{\theta}} \text{exp}\left(-\frac{1}{2}(\bm{\theta}-\bm{\theta}_{\text{MAP}})^\top \mathcal{H} (\bm{\theta}-\bm{\theta}_{\text{MAP}})\right)d\bm{\theta} \\
+    & = \text{exp}(\mathcal{L}(\bm{\theta}_{\text{MAP}}, \mathcal{D}))(2\pi)^{d/2}(\text{det}\left(\mathcal{H}\right))^{-1/2}.
+\end{align}
+
+\noindent Thus we have obtained a Gaussian approximate posterior $q(\bm{\theta}|\mathcal{D})$ described by
+
+\begin{equation}
+    q(\bm{\theta}|\mathcal{D}) = \mathcal{N}(\bm{\theta}|\bm{\theta}_{\text{MAP}}, \mathcal{H}^{-1}).
+\end{equation}
+
+\noindent Computing $\mathcal{H}$ is typically done with the Generalized Gauss-Newton (GGN) approximation \citep{GGN}, mainly due to the fact that it guarantees that $\mathcal{H}$ is positive definite. \\
+
+\noindent One thing to note is that this approximation is extremely appealing and practical due to the fact that it can be done on normally trained neural networks and can be done post-hoc (assuming one has access to data the model was trained on). However, one practical implication (which is general for BNNs) is that of the number of additional variables that must be stored along with the model. If one includes all parameters $k$ of a neural network in the posterior approximation, then the full Hessian would be size $k\times k$ which is prohibitively large for large neural networks. For this reason, the Hessian is sometimes chosen to be diagonal or Kronecker factored \citep{2018_RitterKFAC}. Another method for handling this, is the increasingly popular last layer Laplace (LLLA) where only the parameters of the final layer, $L$, are included in the posterior approximation, and the remaining parameters of the network are treated as point estimates \citep{2021_DaxLastLayer}. \\
+
+\noindent Having obtained the posterior approximation $q(\bm{\theta}|\mathcal{D})$, we have seen that it is possible to approximate the posterior predictive with MC integration. However, it has been observed that the samples obtained by sampling directly from $q(\bm{\theta}|\mathcal{D})$ provides erratic and under-fitting samples \citep{2001_lawrencevariational}. There are varying arguments for why this might be the case. Some argue that it is due to missing invariance under reparametrizations in approximate posteriors \citep{2024_BNNReparam}, whilst others argue it is due to the GGN approximation of the Hessian \citep{2021_LocalLinBNNs}. The proposed fix for this issue with MC integration, which has been empirically validated to solve the underfitting issue of Laplace \citep{2019_InBetweenUncertainty}, is to linearize the neural network function by considering a first order Taylor expansion of $f_{\bm{\theta}}(\mathbf{x}^*)$ around $\bm{\theta}_{\text{MAP}}$ \citep{1992_MacKayLinearization} resulting in 
+
+\begin{equation}
+    f_{\text{lin}}(\mathbf{x}, \bm{\theta})=f_{\bm{\theta}_{\text{MAP}}}(\mathbf{x})+\nabla f_{\bm{\theta}}(\mathbf{x})|^\top_{\bm{\theta}_{\text{MAP}}}(\bm{\theta}-\bm{\theta}_{\text{MAP}}),
+\end{equation}
+
+\noindent which gives rise to the MC integrated posterior predictive distribution
+$p(y^*|\mathbf{x}^*, \mathcal{D})\approx\frac{1}{S}\sum^S_{s=1}p(y^*|f_{\text{lin}}(\mathbf{x}^*, \bm{\theta}^s))$\footnote{For notation sake we write it this way, so just a reminder that $p(y^*|\mathbf{x}^*, \bm{\theta})$ can be written as $p(y^*|f_{\bm{\theta}}(\mathbf{x}))$.} with $\bm{\theta}^s\sim\mathcal{N}(\bm{\theta}|\bm{\theta}_{\text{MAP}}, \mathcal{H}^{-1})$.\\
+
+\noindent To wrap up: in the past years the Laplace approximation has seen growing interest and developments \citep{2022_LaplacianAutoEncoders,2024_functionalpriorslaplace, 2024_RiemanninaLaplace, 2024_LLMMaterials}, in large part due to the convenience of being usable post-hoc, but equally due to the well maintained Laplace Redux \citep{2021_LaplaceRedux} library which makes it simple to apply Laplace approximations even without necessarily understanding the details of the method.
+
+\subsection{Stochastic Weight Averaging Gaussian}
+\label{sec:SWAG}
+Having looked at the Laplace approximations for BNNs, we now turn to the Stochastic Weight Averaging Gaussian (SWAG) \citep{2019_SWAG} posterior approximation, for which the motivation is quite intuitive considering the loss landscape geometry and stochastic gradient descent optimization procedure in neural networks. We can provide this motivation by starting with Stochastic Weight Averaging (SWA) \citep{2018_SWA}. SWA bases itself on the idea that typically, at the end of neural network training (near convergence), we have many optimal parameter settings that all fit our training data equally well, and when we stop training we arbitrarily select the last set of parameters as the optimal set. Rather than doing so, SWA proposes keeping a constant learning rate at the end of neural network training\footnote{It is very common to have decaying learning rate in optimizers.} averaging the last $M$ parameter sets, i.e. $\bm{\theta}_\text{SWA}=\frac{1}{M}\sum^M_{m=1}\bm{\theta}_m$\footnote{Please note that these $M$ parameter sets are obtained after performing the $T$ gradient steps required to reach a flat region in the loss landscape.}. The motivation for SWA is that we are more likely to find a mode of the loss landscape that generalises well by exploring low loss regions of the weight space and selecting the final neural network parameters as the average of parameters across this region (this is empirically validated in \cite{2018_SWA} and has held up since then). SWAG follows very easily on from SWA, as the authors in \cite{2019_SWAG} realised (based on \citep{2016_Chen,2017_Mandt}) that the parameters obtained during constant learning rate SGD optimization contains useful information about the geometry of the posterior $p(\bm{\theta}|\mathcal{D})$. Based on this observation, SWAG proposes a Gaussian approximate posterior using the $M$ parameters obtained at the low loss region to not only compute $\bm{\theta}_\text{SWA}$, but additionally compute some covariance matrix $\bm{\Sigma}_\text{SWAG}$ thus giving 
+
+\begin{equation}
+    p(\bm{\theta}|\mathcal{D})\approx \mathcal{N}(\bm{\theta}|\bm{\theta}_\text{SWA}, \bm{\Sigma}_\text{SWAG}).
+\end{equation}
+
+\noindent Although one in principle could compute and use a full covariance matrix in SWAG, the authors instead propose using both a diagonal and a diagonal plus low-rank approximation of the covariance matrix $\bm{\Sigma}$ for lower memory costs. Assuming that one can store $M$ parameter sets, then the diagonal covariance can be estimated as
+
+\begin{equation}
+    \bm{\Sigma}_\text{diag}=\text{diag}(\tilde{\bm{\theta}}^2-\bm{\theta}_\text{SWA}^2)
+\end{equation}
+
+\noindent with $\tilde{\bm{\theta}}=\frac{1}{M}\sum^M_{m=1}\bm{\theta}_m^2$, where $\bm{\theta}_m^2$ is element wise squaring of the vectors. Should one be interested in a full sample covariance matrix of the samples $\bm{\theta}_m$, it can be written as 
+\begin{equation}
+   \bm{\Sigma}=\frac{1}{M-1} \sum^M_{m=1}(\bm{\theta}_m-\bm{\theta}_{\text{SWA}})(\bm{\theta}_m-\bm{\theta}_{\text{SWA}})^\top,
+\end{equation}
+\noindent which of course is a matrix of size $k\times k$, but this can also be written as 
+
+\begin{equation}
+    \bm{\Sigma} = \frac{1}{M-1}\mathbf{DD}^\top,
+\end{equation}
+
+\noindent where $\mathbf{D}$ is the deviation matrix containing columns $\mathbf{D}_m=(\bm{\theta}_m-\bm{\theta}_{\text{SWA}})$. Luckily one can sample from the normal distribution $\mathcal{N}(\bm{\theta}|\bm{\theta}_{\text{SWA}}, \bm{\Sigma})$ without having to construct the full covariance matrix according to
+
+\begin{equation}
+    \bm{\theta}^s = \bm{\theta}_{\text{SWA}}+\frac{1}{\sqrt{M-1}}\mathbf{D}\bm{\alpha}, \quad \text{where} \quad \bm{\alpha} \sim \mathcal{N}(\mathbf{0}, \mathbf{I}_M).
+\end{equation}
+
+\noindent However, in some cases the deviation matrix $\bm{D}$ may still be too large (it is size $k\times M$), and the authors propose a low-rank approximation of the deviation matrix $\mathbf{\hat{D}}\approx \mathbf{D}$ in which they only use the last $R$ columns of the deviation matrix, reducing the dimensionality from $k\times M$ to $k\times R$. One can then use both the diagonal and low-rank approximation obtaining the Gaussian approximation $\mathcal{N}(\bm{\theta}_{\text{SWA}}, \frac{1}{2}(\bm{\Sigma}_\text{diag}+\bm{\Sigma}_\text{low-rank}))$ which we can sample from according to
+
+\begin{equation}
+    \bm{\theta}^s = \bm{\theta}_{\text{SWA}}+\frac{1}{\sqrt{2}}\sqrt{\bm{\Sigma}_\text{diag}}\bm{\gamma}+\frac{1}{\sqrt{2(M-1)}}\mathbf{\hat{D}}\bm{\beta}, \, \text{where} \, \bm{\gamma} \sim \mathcal{N}(\mathbf{0}, \mathbf{I}_d), \,  \bm{\beta} \sim \mathcal{N}(\mathbf{0}, \mathbf{I}_R).
+\end{equation}
+
+\noindent Thus our mean $\bm{\theta}_{\text{SWA}}$ and the diagonal covariance $\bm{\Sigma}_{\text{diag}}$ will have been estimated from all of the $M$ iterates, whilst the low-rank covariance $\bm{\Sigma}_{\text{low-rank}}$ has been approximated with $R$ iterates (although we never construct the full covariance matrix in practice). \\
+
+\noindent Although SWAG has been observed to work quite well empirically, improving in- and out-of distribution performance \citep{2019_SWAG, 2020_MultiSWAG, dhahri2024shavingweightsoccamsrazor}, the procedure is not cheap to perform and requires careful tuning. The quality of the final mean and covariance estimates are \textit{highly} dependent on the constant learning rate selected to "jump around" in the minima that we are trying to describe. In practice, this constant learning rate has to be cross validated to obtain good performance.
+
+\subsection{Variational Bayesian Last Layers}
+\label{sec:VBLL}
+Variational Bayesian Last Layers (VBLLs) \citep{2024_VBLL} are a recently proposed sampling-free variational formulation of Bayesian last layers (BLL) \citep{2015_BLL}, which attempts to alleviate some of the issues associated with BLL models. It will be simpler to see how VBLL models try to improve on BLL models if we consider BLL models for regression. In BLL models, we generally only consider distributions on the parameters in the final layer of our network. Specifically, if we separate our parameters $\bm{\theta}$ into the output layer parameters $\bm{\theta}_L$ and remaining network parameters $\bm{\theta}_{-L}$ such that $\bm{\theta}=\bm{\theta}_{-L}\cup\bm{\theta}_{L}$, we only consider a distribution over $\bm{\theta}_L$ whilst we keep a point estimate over $\bm{\theta}_{-L}$. Concretely, for BLL models for regression with a one-dimensional output $y$, the model is\footnote{Please note that this notation is more commonly written as $y = \mathbf{w}^\top\bm\phi_{ \bm{\theta}_{-L}}(\mathbf{x})+\mathbf{\epsilon}$, but for notational consistency with the neural networks, we show it with $\bm{\theta}$ instead.}
+
+\begin{equation}
+    y = \bm{\theta}_L\bm\phi_{\bm{\theta}_{-L}}(\mathbf{x}) + \epsilon
+\end{equation}
+
+\noindent where $\epsilon \sim \mathcal{N}(0, \sigma^2)$, and $\bm\phi_{\bm{\theta}_{-L}}$  is the feature embedding function of the network. If one places Gaussian prior $\mathcal{N}(\mathbf{0}, \bm\Sigma)$ on $\bm{\theta}_L$, then the resulting posterior is also Gaussian with $\mathcal{N}(\bm\mu_{\bm{\theta}_L}, \bm\Sigma_{\bm{\theta}_L})$, which we have previously seen in Equation \ref{sec:posterior_predictive_gauss} leads to Gaussian posterior predictive 
+
+\begin{equation}
+\label{eq:post_pred_vbll}
+    p(y^*|\mathbf{x^*}, \mathcal{D}, \bm{\theta}) = \mathcal{N}(y^*|\bm\mu_{\bm{\theta}_L}^\top\bm\phi_{\bm{\theta}_{-L}}(\mathbf{x}^*), \bm\phi_{\bm{\theta}_{-L}}(\mathbf{x}^*)^\top\bm\Sigma_{\bm{\theta}_L}\bm\phi_{\bm{\theta}_{-L}}(\mathbf{x}^*)+\sigma^2).
+\end{equation}
+
+\noindent where the only difference is that we have replaced $\mathbf{x}^*$ with the basis function projections $\bm\phi_{\bm{\theta}_{-L}}(\mathbf{x}^*)$. However, it still remains to be seen how to learn the feature embedding function (or basis functions) $\bm\phi_{\bm{\theta}_{-L}}$. There are generally two ways of learning these. The first is the more straightforward way considered in \cite{2015_BLL}. Here the network is first trained end-to-end via MAP estimation using mini-batched gradient descent, after which the final layer is removed and replaced with a Bayesian linear regression model which is conditioned on the full dataset. The main concern and problem with this method is that the basis functions are not learnt jointly with the final BLL predictions and are therefore not encouraged to learn features that enable good uncertainty estimates \citep{ober2019benchmarking}. The second option is to train the model end to end by performing gradient descent on the exact log marginal likelihood with respect to the weights $\bm{\theta}_{-L}$ in order to optimize the neural network. This is similar to how hyperparameter optimisation is done in GPs, i.e. type II maximum likelihood, essentially treating $\bm{\theta}_{-L}$ as hyperparameters. However, this is costly due to the fact that one must iterate over the full dataset for each gradient computation and moreover, some have observed that BLL models changed in this way actually perform \textit{even worse} than regular deterministic neural networks on out-of-distribution data \citep{2021_NLMs,2021_BLLnDKL}. \\
+
+\noindent VBLLs have been proposed as a way to leverage type II maximum likelihood but without the computational restraint of having to be able to iterate over the full dataset for each gradient computation. VBLL models instead learn a variationally approximated posterior over the last layer and a point estimate of the remaining parameters by maximising a lower bound of the log marginal likelihood typically used in BLL models, i.e.
+
+\begin{equation}
+    \mathcal{J}(\mathcal{D}, \bm{\theta}_{-L}) = \int p(y, \bm\theta_L|\mathbf{X}, \bm\theta_{-L}) d \bm\theta_L =  \log p(\mathbf{y}|\mathbf{X}, \bm{\theta}_{-L}).
+\end{equation}
+
+\noindent In the VBLL formulation we are trying to find the approximate posterior $q(\bm{\theta}_L|\eta)$ whilst learning the MAP estimate of $\bm{\theta}_{-L}$ where $\bm{\theta}_L$ are the parameters of the last layer, $\bm{\theta}_{-L}$ are the remaining parameters of the neural network, and $\eta$ are the parameters of the variational distribution. We do this by minimizing the Kullback–Leibler divergence between our variational posterior $q(\bm{\theta}_L|\eta)$ and the true (unknown) posterior $p(\bm{\theta}_L|\mathcal{D})$. We have:
+
+\begin{align*}
+\KL(q(\bm{\theta}_L|\eta)||p(\bm{\theta}_L|\mathcal{D}))&=\int q(\bm{\theta}_L|\eta) \log\left[\frac{q(\bm{\theta}_L|\eta)p(\mathcal{D})}{p(\bm{\theta}_L)p(\mathcal{D}|\bm{\theta}_L)}\right]d\bm{\theta}_L \\
+& = \mathbb{E}_q\left[\log\frac{q(\bm{\theta}_L|\eta)}{p(\bm{\theta}_L)}-\log p(\mathcal{D}|\bm{\theta}_L)+\log p(\mathcal{D})\right]\\
+& = \KL(q(\bm{\theta}_L|\eta)||p(\bm{\theta}_L))-\mathbb{E}_q\left[\log p(\mathcal{D}|\bm{\theta}_L)\right]+\log p(\mathcal{D}),
+\end{align*}
+
+\noindent where $\mathbb{E}_q$ is short hand notation for $\mathbb{E}_{q(\bm{\theta}_L|\eta)}$. We can rearrange the terms and get a lower bound for the log marginal likelihood
+
+\begin{align}
+\label{eq:log_marg}
+    \log p(\mathcal{D}) &= \mathbb{E}_q\left[\log p(\mathcal{D}|\bm{\theta}_L)\right]-\KL(q(\bm{\theta}_L|\eta)||p(\bm{\theta}_L)+\KL(q(\bm{\theta}_L|\eta)||p(\bm{\theta}_L|\mathcal{D})) \\
+    & \geq \mathbb{E}_q\left[\log p(\mathcal{D}|\bm{\theta}_L)\right]-\KL(q(\bm{\theta}_L|\eta)||p(\bm{\theta}_L),
+\end{align}
+
+\noindent due to the fact that the KL between the variational posterior and the true posterior is always greater than or equal to zero. Here we can also see that because the left-hand side of Equation \ref{eq:log_marg} is constant, maximising the two first terms of the right-hand side must minimise the KL divergence between the true posterior $p(\bm{\theta}_L|\mathcal{D})$ and approximate posterior $q(\bm{\theta}_L|\eta)$. For supervised tasks where $\mathcal{D}=\{(\mathbf{x}_1,y_1),...,(\mathbf{x}_n,y_n)\}$ we can write this lower bound as
+
+\begin{align}
+    \log p(\mathbf{y}|\mathbf{X}, \bm{\theta}_{-L})\geq \mathbb{E}_q\log p(\mathbf{y}|\mathbf{X}, \bm{\theta}_{-L}, \eta)-\KL\left(q(\bm{\theta}_L|\eta)||p(\bm{\theta}_L)\right).
+\end{align}
+
+\noindent In \cite{2024_VBLL}, the authors generally write this lower bound in the form
+
+\begin{equation}
+    N^{-1} \log p(\mathbf{y}|\mathbf{X}, \bm{\theta}_{-L}) \geq \mathcal{L}(\bm{\theta}_{-L}, \eta, \sigma) - N^{-1} \text{KL}(q(\bm{\theta}_L|\eta)||p(\bm{\theta}_L)),
+    \label{eq:marg_lowerbound_vbll}
+\end{equation}
+
+\noindent where the authors have denoted the marginal likelihood term $\mathbb{E}_q\log p(\mathbf{y}|\mathbf{X}, \bm{\theta}_{-L}, \eta)$ as $\mathcal{L}(\bm{\theta}_{-L}, \eta, \sigma)$ to indicate that this likelihood term is dependant on the task at hand, and can be seen as a loss function and included the output noise $\sigma$. The authors also include a scaling term $N$ (chosen as the dataset size) which they use to adapt the regularization weight in the training objective. For regression tasks, the authors generally assume a Gaussian posterior approximation, i.e.
+
+\begin{equation}
+    q(\bm{\theta}_L|\eta) = \mathcal{N}(\bm{\theta}_L|\bm\mu_{\bm{\theta}_L}, \bm\Sigma_{\bm{\theta}_L}),
+\end{equation}
+
+\noindent and a Gaussian prior $p(\bm{\theta}_L)=\mathcal{N}(\bm\mu_p, \bm\Sigma_p)$, where $\bm\mu_{\bm{\theta}_L}$ and $\bm\Sigma_{\bm{\theta}_L}$ are learnable parameters, and thus $\eta = \{\bm\mu_{\bm{\theta}_L}, \bm\Sigma_{\bm{\theta}_L}\}$. \\
+
+\noindent As we have seen, in the regression case the regular BLL model takes the form 
+
+\begin{equation}
+    y = \bm{\theta}_L^\top\bm\phi_{\bm{\theta}_{-L}}(\mathbf{x})+\mathbf{\epsilon}, \quad \text{where} \quad \mathbf{\epsilon} \sim \mathcal{N}(0, \sigma^2)
+\end{equation}
+
+\noindent where $\bm\phi$ is the output of the feature layers parametrized by $\bm{\theta}_{-L}$. As we have previously seen (i.e. in Equation \ref{eq:post_pred_vbll}), given a Gaussian posterior distribution $p(\bm{\theta}_L|\bm\mu_{\bm{\theta}_L}, \bm\Sigma_{\bm{\theta}_L})$, the posterior predictive becomes
+
+\begin{equation}
+    p(y|\mathbf{x}, \eta, \bm{\theta}_{-L}) = \mathcal{N}(y|\bm\mu_{\bm{\theta}_L}^\top\bm\phi, \bm\phi^\top\bm\Sigma_{\bm{\theta}_L}\bm\phi+\sigma^2)
+\end{equation}
+
+\noindent where $\bm\phi$ is shorthand for $\bm\phi_{\bm{\theta}_{-L}}(\mathbf{x})$. We can derive the loss term in the VBLL model with variational posterior $\mathcal{N}(\bm{\theta}_L|\bm\mu_{\bm{\theta}_L}, \bm\Sigma_{\bm{\theta}_L})$  in closed form for regression tasks with Gaussian likelihood. Firstly, we have
+
+\begin{align}
+    \mathbb{E}_q\log p(\mathbf{y}|\mathbf{X}, \bm{\theta}_{-L}, \eta) &=  \sum^N_{n=1}\mathbb{E}_q\log p(y_n|\mathbf{x}_n, \bm{\theta}_{-L}, \eta),
+    \label{eq:VBLL_regression}
+\end{align}
+
+\noindent where $N$ is the number of points in the training dataset. If we now let $q(\bm{\theta}_L)=\mathcal{N}(\bm\mu_{\bm{\theta}_L}, \bm\Sigma_{\bm{\theta}_L})$, $p(y|\mathbf{x}, \bm{\theta}_L)=\mathcal{N}(\bm{\theta}_L^\top\mathbf{x}, \sigma^2)$ with $y, \sigma \in \mathbb{R}$, $\bm{\theta}_L$, $\bm\mu_{\bm{\theta}_L}, \mathbf{x} \in \mathbb{R}^d$ and $\bm\Sigma_{\bm{\theta}_L} \in \mathbb{R}^{d\times d}$ we can show that
+
+\begin{equation}
+    \mathbb{E}_q\log p(y|\mathbf{x}, \bm\theta_L) = \log p(y|\mathbf{x}, \bm\mu_{\bm{\theta}_L})-\frac{1}{2\sigma^2}(\mathbf{x}^\top\bm\Sigma_{\bm{\theta}_L}\mathbf{x}).
+\end{equation}
+
+\noindent We have 
+
+\begin{align}
+    \mathbb{E}_q\log p(y|\mathbf{x}, \bm\theta_L) & = -\frac{1}{2}\mathbb{E}_q\left[\log(2\pi\sigma^2)+\frac{1}{\sigma^2}(y-\bm{\theta}_L^\top\mathbf{x})^2\right] \\
+    & = -\frac{1}{2}\left[\log(2\pi\sigma^2)+\mathbb{E}_q\left[\frac{1}{\sigma^2}(y-\bm{\theta}_L^\top\mathbf{x})^2\right]\right] \label{eq:completingsquare} \\
+    & = -\frac{1}{2}\left[\log(2\pi\sigma^2)+\frac{1}{\sigma^2}(y-\bm\mu^\top_{\bm{\theta}_L} \mathbf{x})^2+\frac{1}{\sigma^2}\mathbf{x}^\top\bm\Sigma_{\bm{\theta}_L}\mathbf{x}\right] \label{eq:logdens} \\
+    & = \log p(y|\mathbf{x}, \bm\mu_{\bm{\theta}_L})-\frac{1}{2\sigma^2}\mathbf{x}^\top\bm\Sigma_{\bm{\theta}_L}\mathbf{x},
+\end{align}
+
+\noindent where the step from Equation \ref{eq:completingsquare} to \ref{eq:logdens} can be completed by expanding the square inside the expectation, using the variance definition and completing the square again. Additionally, the last line stems from the fact that the two first terms in Equation \ref{eq:logdens} form the log density. We can now write the expectation over the log density in Equation \ref{eq:VBLL_regression} as
+
+\begin{equation}
+    \mathbb{E}_q\log p(y_n|\mathbf{x}_n, \bm{\theta}_{-L}, \eta) = \log p(y_n|\mathbf{x}_n, \bm{\theta}_{-L}, \bm\mu_{\bm{\theta}_{L}})-\frac{1}{2\sigma^2}\bm\phi_n^\top\bm\Sigma_{\bm{\theta}_{L}}\bm\phi_n,
+\end{equation}
+
+\noindent and we now have all the terms required to train the VBLL models for regression. \\
+
+% \noindent This can be computed without sampling and the lower bound on the marginal likelihood is tight when $q$ is exactly the true posterior $p$.\\
+
+\noindent Although it has not been utilized in any of the research work presented in this thesis, for completion I briefly outline VBLLs for classification tasks. In classification the authors present a variational posterior with block diagonal covariances (i.e. no cross-class covariances)
+
+\begin{equation}
+    q(\bm{\theta}_L|\eta)=\prod^K_{k=1}q(\bm{\theta}_{L, k}|\eta_k)=\prod^K_{k=1}\mathcal{N}(\bm{\theta}_{L, k}|\bm\mu_{\bm{\theta}_{L, k}}, \bm\Sigma_{\bm{\theta}_{L, k}}),
+\end{equation}
+
+\noindent where $\bm{\theta}_{L, k}$ is the $k$'th row of $\bm{\theta}_L$. For a standard BLL model, the model is
+
+\begin{equation}
+    p(\mathbf{y}|\mathbf{x}, \bm{\theta}_L, \bm{\theta}_{-L}) = \text{softmax}(\mathbf{z}), \quad \mathbf{z}=\bm{\theta}_L\bm\phi(\mathbf{x})
+\end{equation}
+
+\noindent where $\mathbf{z}$ are the $K$ logits. In this formulation then the loss term in Equation \ref{eq:marg_lowerbound_vbll} becomes
+\begin{equation}
+    \mathcal{L}(\bm{\theta}_{-L}, \eta, \bm\Sigma) = \frac{1}{N}\sum^N_{n=1}\left(\mathbf{y}_n^N \bm\mu_L\bm\phi_n - \text{LSE}_k\left[\bm\mu_{\bm{\theta}_{L, k}}^\top\bm\phi_n+\frac{1}{2}\bm\phi_n^\top\bm\Sigma_{\bm{\theta}_{L, k}}\bm\phi_n\right]\right),
+\end{equation}
+
+\noindent where $\text{LSE}_k$ indicates the log-sum-exp function over $k$. The derivation is not included here, but note that this loss term can not be computed exactly and this is therefore a lower bound on the lower bound (a similar trick is used in \cite{BLEI_classification}). \\
+
+\noindent In VBLL when the parameters $\bm{\theta}_{-L}$ are point estimates, the posterior predictive for the Gaussian regression case can be computed in closed-form, but has to be approximated with Monte Carlo sampling for the classification case. \\
+
+\noindent In the full formulation (including priors), the training objective of VBLLs (which needs to be maximised) in which the variational posterior and the MAP estimates of the feature layers are learnt jointly is
+
+\begin{equation}
+    \mathcal{L_{\text{VBLL}}}=\mathcal{L}(\bm{\theta}_{-L}, \eta, \sigma) + N^{-1}\left[\log p(\bm{\theta}_{-L})+ \log p(\sigma )-\text{KL}(q(\bm{\theta}_L|\eta)||p(\bm{\theta}_L))\right].
+\end{equation}
+
+\noindent A Gaussian prior $p(\bm{\theta}_{-L})$ is generally used to yield weight decay on the feature layer parameters, whilst an inverse-Wishart prior is placed on $\sigma$. \\
+
+\noindent Training VBLLs is similar to many other BNN methods discussed in this thesis in that the choice of hyperparameters is highly non-trivial, and thus are either selected according to some "default" regular choices or must be cross validated which can be expensive to do at scale. As an alternative to the joint training procedure, the VBLL formulation also allows pretraining of the MAP estimates for the feature layers, and then later enabling the VBLL loss with the posterior approximation on the last layer, resulting in a more stable and more efficient training method. In the original work, VBLL models especially show better performance over many other comparable BNN methods on regression tasks, which in part is why we considered them for Bayesian Optimisation which Paper D is about.
+
+\subsection{Deep Ensembles}
+\label{sec:DEs}
+So far we have been covering approximation methods that only cover one mode of the true posterior distribution $p(\bm{\theta}|\mathcal{D})$, but one might question whether this actually is a sufficiently good approximation, due to the fact that we know that loss landscapes of overparametrized neural networks are highly multi-modal. Naturally one might think that covering multiple modes with the approximate posterior should allow better performance for Bayesian Neural Network inference methods - and it turns out that it often does. Deep ensembles (DE) is one such method that to the frustration of many (due to its simplicity) has proved extremely difficult to beat in terms of uncertainty quantification and model calibration.\\
+
+\noindent DEs date back to a time period even before the modern era of neural networks \citep{1990_LKAIDE}, yet became popularised after \cite{2017_DE}. Although it was presented in \cite{2017_DE} as a contrasting method to BNNs, it has since then been interpreted as a multi-modal approximate posterior method for neural networks \citep{Izmailov2021WhatAB,2021_DEsBNNs}, especially when they are functionally diverse \citep{2021_RepulsiveDEs}. The method is extremely intuitive and (in my opinion) elegant in its simplicity. It stems from the observation that when we train MAP estimates from differently initialized weights, we converge to different modes of the loss landscape. The clever observation is that even though these functions all will fit the data (at least if the neural network is overparametrized), the differently initialized networks will have different functional forms on non-training data regions. If one then takes several MAP estimates obtained from differently initialised weights (but typically the same architecture) and average their predictions, then these functions will generalize better. \\
+
+\noindent More formally, one can view DEs as approximate inference where the posterior distribution is approximated with a uniform mixture of Dirac delta distributions centered on the modes of the true posterior which leads to a posterior predictive
+
+\begin{equation}
+    p(y^*|\mathbf{x}^*, \mathcal{D}) \approx \frac{1}{S} \sum^S_{s=1}p(y^*|\mathbf{x}^*,\bm{\theta}^s),
+\end{equation}
+
+\noindent where $\bm{\theta}^s$ is the MAP estimate obtained from initialized weights $\bm{\theta}_0^s$. In fact with this interpretation of DEs it seems extremely obvious that DEs should outperform approximation methods that only cover a single mode. I.e. the points of the true posterior we marginalise over when performing DEs will generally have much higher density than marginalising over a single local mode, and moreover, the functional diversity across several modes will be much higher than it will within a single mode. \\
+
+\noindent Since the proposal of DEs, several works have explored consolidation of local mode descriptions and the multi-modality of DEs for better generalisation. This has been experimented for Laplace approximated BNNs (MoLA) \citep{2021_MOLA}, and SWAG BNNs (Multi-SWAG) \citep{2020_MultiSWAG} where some success has been reported. Yet we investigated this systematically for several inference methods, data modalities and model architectures and found that when the number of ensemble members grow sufficiently large, ensembling of MAP estimates consistently outperform ensembles of BNNs, a very counter-intuitive result that we try to explain in Paper B.
+
+
+\subsection{Other Approximation Methods}
+
+\noindent There are of course other approximate inference methods for BNNs, but those  I do not discuss in depth in this thesis, but briefly mention here:  \begin{enumerate*}
+\item Monte Carlo Dropout \citep{mcdropout_2016}, a Bayesian interpretation of the commonly used Dropout layer \citep{2014_Dropout} which is convenient to use as it does not require any addition training steps to use as long as the neural network includes dropout layers.
+\item Stochastic Gradient Langevin Dynamics \citep{SGLD_2011}, a special case of HMC which is much cheaper to use in practice, yet does not explore the full posterior as well as HMC does.
+\item Node Based BNNs \citep{Rank1BNN_2020}, which rather than approximating the posterior $p(\bm{\theta}|\mathcal{D})$, multiply the hidden nodes with a latent random variable providing another estimate of epistemic uncertainty.
+\end{enumerate*}
+
+\section{Evaluating Probabilistic Models}
+
+How to evaluate the quality of the predictive uncertainty quantification and calibration is highly dependant on the task at hand. In an ideal setup, one would evaluate the proposed models in simulated \textit{in-situ} settings or control environments, but such situations are rarely readily available and moreover, would mean much longer evaluation times for newly proposed methods. Therefore, evaluation often ends up being metrics which are supposed to serve as a proxy for how the proposed methods would work in a real setting. However, in some cases, one can also show how improved model calibration and predictive uncertainty can improve applications they are utilized in. In this section I firstly outline a number of commonly used metrics for evaluating model calibration and predictive uncertainty after which I outline two applications where model calibration and predictive uncertainty can have a large impact on performance or be utilized for improved systems, namely Bayesian Optimisation and Sequence-to-Sequence learning.\\
+
+\subsection{Metrics}
+\label{sec:eval_metrics}
+\noindent One of the most commonly used for evaluating predictive uncertainty is negative-log likelihood (NLL). on the test set, which has an intrinsic evaluation of predictive uncertainty. In regression tasks the likelihood is typically Gaussian whilst it is categorical in the case of classification. Test NLL can generally be written as
+
+\begin{equation}
+    \text{NLL}(\bm{\theta}, \mathcal{D}_{\text{test}}) = -\frac{1}{N_{\text{test}} }\sum^{N_{\text{test}}}_{n=1} \log p(y_n|f_{\bm{\theta}}(\mathbf{x}^n)).
+\end{equation}
+
+\noindent However, even though NLL serves as a good indicator for model comparison and performance as the metric is not particularly interpretable by humans, and it is therefore often desirable to consider more interpretable metrics. In the case of classification tasks, expected calibration error (ECE) and maximum calibration error (MCE) \citep{ECE_MCE} is often considered. The most commonly used formulation of ECE (in some places referred to as top-$1$ ECE) is obtained by binning the maximum confidence predictions for each sample in the test set and calculating the differences between the average predicted probability and the accuracy of the samples within a bin. Specifically ECE can be calculated as
+
+\begin{equation}
+    \text{ECE}(\mathcal{D}_{test}) = \sum_{b=1}^{B}\frac{N_b}{N}(|\text{acc}_b - \text{conf}_b|),
+\end{equation}
+
+\noindent where 
+
+\begin{equation}
+    \text{acc}_b = \frac{1}{N_b}\sum^{N_b}_{n=1}\mathbbm{1}(y_{n}=\text{argmax}(f_{\bm{\theta}}(\mathbf{x}_n)))
+\end{equation}
+
+\noindent and
+
+\begin{equation}
+    \text{conf}_b = \frac{1}{N_b}\sum^{N_b}_{n=1}\text{max}(\text{softmax}(f_{\bm{\theta}}(\mathbf{x}_n))),
+\end{equation}
+
+\noindent where bin $b$ contains samples with predicted maximum probabilities in the range $[p_{b}, p_{b+1}]$. MCE is simply the maximum difference observed across all the bins, i.e.
+
+\begin{equation}
+    \text{MCE}(\mathcal{D}_{test}) = \max_b\{|\text{acc}_b - \text{conf}_b|\}.
+\end{equation}
+
+\noindent Unlike NLL, ECE and MCE for classification have very clear human interpretability as it simply is the difference between confidence and predictions in accuracy which can be directly expressed in words. I.e. if a model is perfectly calibrated (the ECE is $0$), then when it assigns probability $p$ to class $C$ in $A$ events, we would expect $p$ of those $A$ events to be class $C$. One thing to be aware of when using and comparing ECE metrics, is that the effect of binning and hyperparameter choice of number of binnings can have a large effect on the metric. There are therefore also many works that try to extend or adapt ECE to become more robust to these hyperparameters \citep{2019_ECEExtensions,2023_TCE,Futami2024InformationtheoreticGA}, but these variations are not widely adapted in the literature. In regression we say that a model is well-calibrated if $q$ percent of test samples fall within the $q$ percent confidence interval of the predictive distribution, and the ECE can thus be calculated as
+
+\begin{align} 
+    \text{ECE}(\mathcal{D}_{test}) = \sum_p (C(p) - p)^2,
+\end{align}
+where
+\begin{equation}\label{eq:Cy}
+    C(p) = \frac{1}{N_T} \sum_{t=1}^{N_T} \mathbbm{1} [ y_t  \leq F_t^{-1}(p) ],
+\end{equation}
+
+\noindent where $F_t^{-1}(p)$ is the quantile function for the normal distribution. ECE for regression is less intuitive and this particular evaluation of model calibration is not used extensively in the regression literature. An alternative to ECE for regression is the Expected Normalized Calibration Error (ENCE) \citep{levi2020evaluatingcalibratinguncertaintyprediction}, where the basic idea is that the predictive uncertainty of a perfectly calibrated model should match the mean square error for a given test point, i.e.
+
+\begin{equation}
+    \mathbb{E}_{x,y}\left[(f_{\bm{\theta}}(\mathbf{x})-y)^2|\sigma(\mathbf{x})=\sigma^2\right] = \sigma^2, \quad \forall \sigma.
+\end{equation}
+
+\noindent To do this in practice, one must similarly bin the variances $\sigma$ into $B$ bins, where each bin contains samples within some interval of uncertainty
+$[\min_{n\in B}\{\sigma_n\},\max_{n\in B}\{\sigma_n\}]$, which is analogous to what is done in ECE for classification. Within each bin, the root mean variance and empirical root mean square error is computed according to
+
+\begin{equation}
+    \text{RMV}_b = \sqrt{\frac{1}{|B_b|}\sum_{n\in B_b}\sigma_{\bm{\theta}}(\mathbf{x})^2}
+\end{equation}
+
+\noindent and 
+
+\begin{equation}
+    \text{RMSE}_b = \sqrt{\frac{1}{|B_b|}\sum_{n\in B_b}(f_{\bm{\theta}}(\mathbf{x})-y)^2}.
+\end{equation}
+
+\noindent The full ENCE is then calculated as
+
+\begin{equation}
+    \text{ENCE} = \frac{1}{B}\sum^B_{b=1}\frac{|\text{RMV}_b-\text{RMSE}_b|}{\text{RMV}_b}
+\end{equation}
+
+\noindent where $B$ is the number of bins. \\
+
+\noindent Finally, in classification it is also very common to use the Brier score \citep{VERIFICATIONOFFORECASTSEXPRESSEDINTERMSOFPROBABILITY}
+
+\begin{equation}
+    \text{Brier Score} = \frac{1}{N}\sum^N_{n=1}\sum^K_{k=1}(p^k_{\bm{\theta}}(\mathbf{x}_{n})-o_n^k)^2,
+\end{equation}
+
+\noindent where $o_n^k = \mathbbm{1}(y_n = k)$ and $p^k_{\bm{\theta}}(\mathbf{x}_{n})$ is the predicted probability of class $k$ for sample $\mathbf{x}_n$. \\
+
+\noindent In reality it is rare that just one single metric is used, but rather a number of metrics are typically employed. This is in large part due to the fact that some metrics have certain pathologies such as ECE for classification - a model can be perfectly calibrated if it just predicts probabilities which exactly match the empirical distribution of classes, but as a predictor this model is of course useless.
+
+\subsection{Applications of Probabilistic Models}
+\label{sec:apps_probmodels}
+So far we have discussed BNN methods for obtaining calibrated neural networks, and we have discussed metrics for evaluating the calibration and uncertainty quantification of the models once trained. However the metrics we have discussed so far are mainly useful from a method development perspective, and in order to evaluate the true usefulness of these models, it is interesting to investigate using them downstream applications. Here, I briefly outline two different applications of probabilistic models where the calibration of the model plays a large role. The first is Bayesian Optimization, and the second is sequence-to-sequence tasks.
+
+\subsubsection*{Bayesian Optimisation}
+\label{sec:BO}
+Bayesian Optimisation (BO) \citep{2012_BO, deFreitas_BO}, is a sequential optimisation method for black-box objective functions that utilizes probabilistic machine learning models to select where to query the objective functions next. More formally, in BO we are interested in finding the global optimum $\mathbf{x}^* = [x_1^*, x_2^*, ...., x_d^*]$ of some black box function $f(\mathbf{x})$, i.e.
+
+\begin{equation}
+    \mathbf{x}^* = \underset{\mathbf{x}\in \mathcal{X}}{\text{argmax}} f(\mathbf{x}).
+\end{equation}
+
+\noindent BO is particularly useful in sequential experimental design settings where the objective function is expensive to evaluate (due to inconvenience, high cost or time constraints) and gradients are not available such as in user-preference learning \citep{BO_hearingaids, gonzalez_preferencelearning}, scientific drug and material discovery experiments \citep{Kim2021DeepLF, BOforDrugDesign} or controller/motor tuning in robotics \citep{pmlr-v70-akrour17a,brunzema_controller}. \\
+
+\noindent BO is performed by fitting a probabilistic machine learning model (commonly referred to as a \textit{surrogate model}) to all previously collected data points $\mathcal{D}$, and then use an acquisition function to select where to query $f$ next. The acquisition function is based on the fitted surrogate model, and has a trade-off of predictive uncertainty and predictive mean. To concretise, consider the commonly used acquisition function Upper Confidence Bound (UCB) \citep{Srinivas_2012}
+
+\begin{equation}
+    \text{UCB}(\mathbf{x}) = \mu_{\bm{\theta}}(\mathbf{x})+\beta\sigma_{\bm{\theta}}(\mathbf{x})
+\end{equation}
+
+\noindent where $\mu_{\bm{\theta}}(\mathbf{x})$ and $\sigma_{\bm{\theta}}(\mathbf{x})$ are the predictive mean and standard deviation of the surrogate model respectively and $\beta$ is a hyperparameter. The next query made to $f(\mathbf{x})$ is selected as
+
+\begin{equation}
+        \mathbf{x}_\text{next} = \underset{\mathbf{x}\in \mathcal{X}}{\arg\max}\,\text{UCB}(\mathbf{x}).
+\end{equation}
+
+\noindent In the simplest BO routine, a new query point $\mathbf{x}_\text{next}$ is selected at every iteration based on the acquisition function and $f$ is queried at this point. The dataset is then updated as $\mathcal{D}_{\text{next}}=\{\mathcal{D}, \mathbf{x}_\text{next}\}$, and the BO routine restarts until some budget limit is reached. The BO routine is formalized in Algorithm \ref{alg:BO}. \\
+
+\begin{algorithm}[H]
+\centering
+\caption{Bayesian Optimisation}
+\begin{algorithmic}
+\STATE Budget $B$, Num. init points $N_{\text{init}}$, Acquisition Function AF, Surrogate Model $M$, Black-box objective function $f$.
+\STATE Sample $N_{\text{init}}$ random points from $f(\mathbf{x})$..
+\STATE Set $\mathcal{D}=\{(f(\mathbf{x}_1), \mathbf{x}_1),..,(f(\mathbf{x}_{N_{\text{init}}}), \mathbf{x}_{N_{\text{init}}})\}$.
+\WHILE{
+$i$ < $B$
+}
+\STATE Fit $M$ to $\mathcal{D}$.
+\STATE $\mathbf{x}_\text{next} = \underset{\mathbf{x}}{\arg\max}\, \text{AF}(\mathbf{x}, M)$
+\STATE $\mathcal{D} = \{\mathcal{D}, (f(\mathbf{x}_\text{next}), \mathbf{x}_\text{next})\}$.
+\STATE $i++$.
+\ENDWHILE
+\STATE return $\mathbf{x}^*= \underset{f}{\arg\max}\,\mathcal{D}$
+\end{algorithmic}
+\label{alg:BO}
+\end{algorithm}
+
+\noindent In all acquisition functions for BO there exists a trade-off between exploring areas of the input space where the surrogate model has high uncertainty and exploiting areas of the input space where $f$ is already known to have high values - this is commonly known as the exploitation-exploration trade-off in the BO literature. This trade-off is exactly why it is important to have a well-calibrated surrogate model - if the model's predictive uncertainty does not match the empirical uncertainty and inaccuracy of the model, then the exploitation-exploration will be misbehaved and the BO routine likely obtain poor performance. It is therefore of high interest to be able to obtain well-calibrated probabilistic models in this setting as the performance of the BO routine is highly linked to the performance of the surrogate models. In Paper C we specifically investigate how much model calibration impacts BO performance, and in Paper D we investigate and develop on a new type of BNN surrogate model for BO.
+
+\subsubsection*{Sequence-to-Sequence Learning}
+\label{sec:seqtoseq}
+The other application of probabilistic machine learning we consider in this thesis, is neural networks for sequence-to-sequence learning. In this specific case we consider sequence-to-sequence learning in the context of natural language processing (NLP), for example translating Danish to English. More formally, we consider the task of translating some input sequence of length $m$, $\mathbf{x}=[x_1, x_2, ..., x_m]$ to some output sequence of length $h$, $\mathbf{y}=[y_1, y_2, ..., y_h]$ using a neural network to perform the translation. The wish here of course is to be able to predict some $\mathbf{y}^*$ given a new input sequence $\mathbf{x}^*$, i.e. $\mathbf{y}^*=\underset{\mathbf{y}}{\arg\max}\,p(\mathbf{y}|\mathbf{x}^*)$. In NLP tasks it is important to note that the input and output sequences have been tokenised using some vocabulary $V$, which is a modelling choice. \\
+
+\noindent In this setting, neural networks are often trained via MAP estimation. The most commonly used likelihood in sequence-to-sequence tasks factorises according to
+
+\begin{equation}
+    p(\mathbf{y}|\mathbf{x}) = \prod^h_{i=1}p(y_i|\mathbf{x}, y_{i-1},...,y_{1}),
+\end{equation}
+
+\noindent meaning that the next $y_i$ output by the model is conditioned on the input sequence $\mathbf{x}$ and previous outputs $[y_{i-1},...,y_{1}]$. Due to the discrete nature of the output space, the likelihood for a new token $y_i$ is chosen to be a categorical likelihood which leads to the cross-entropy loss function for which we for the $n$'th sample in training have
+
+\begin{equation}
+    \mathcal{L}(\mathbf{y}_n, \mathbf{x}_n) = - \sum_{i=1}^{h_n}\sum_{j=1}^{|V|}\mathbbm{1}(y_i=j)\log p(y_i|\mathbf{x}, y_{i-1},...,y_{1}).
+\end{equation}
+
+\noindent At prediction time, the simplest prediction strategy is to use greedy search to output one token at a time, i.e. 
+
+\begin{equation}
+    y^*_i = \arg\max_vp(y_i=v|\mathbf{x}^*, y^*_{i-1},...,y^*_{1}),
+\end{equation}
+
+\noindent where $v$ is the label for $v \in V$. In Papers E and F, we develop sequence-to-sequence models for usage in an e-learning platform and in this application the calibration and uncertainty quantification of the models can play a very important factor.
+
+%In addition to the ENCE, the authors in \cite{levi2020evaluatingcalibratinguncertaintyprediction} also suggest evaluating a coefficient of variation metric which can be computed as
+
+%\begin{equation}
+%    c_v = \frac{\sqrt{\frac{\sum^N_{n=1}(\sigma_{\bm{\theta}}(\mathbf{x})-\mu_\sigma)^2}{N-1}}}{\mu_\sigma}
+%\end{equation}
+
+%\noindent where $\mu_\sigma=\frac{1}{N}\sum^N_{n=1}\sigma_{\bm{\theta}}(\mathbf{x})^2$. The main reason for using this coefficient of variation is that if the model only predicts homogenous uncertainty, then the ENCE would be $0$ if the uncertainty matches the emperical uncertainty of the whole population which we do not
+
+
+
+%The presentation of GPs that follows Bayesian linear regression is known 
+
+%The GPs presented here are just one of the most simple cases, but are supposed to serve 
+
+% \begin{enumerate}
+%     \item Developments on GP (deep gps etc).
+%     \item Scaling of GPs.
+%     \item Approximate inference.
+%     \item Issues with GPs (kernel specification, basis function learning).
+% \end{enumerate}
+
+ %Now we turn the attention to Gaussian Processes, which, according to [RASMUSSEN GP] became popular in the machine learning community in the late 1990's and 2000's due to the difficulty of applying large neural networks in practice due to the number of decisions/hyperparameter choices in these models (activations, model size, learning rates) and the lack of principles for how to choose them (the book was first published in 2006, so we have undoubtedly moved on from then).
+
+% \begin{enumerate}
+% 	\item Introduction to Background Chapter
+% 	\item Bayesian Machine Learning
+% 	\begin{enumerate}
+% 		\item Why Bayesian Inference?
+% 		\item Gaussian Processes
+% 		\item Bayesian Neural Networks (and variations)
+% 	\end{enumerate}
+% 	\item Bayesian Optimisation
+% 	\item Sequence-to-sequence Tasks
+% \end{enumerate}
+
+
+%In both cases, there is a clear probabilistic interpretation of the typically used cross-entropy and mean-squared error loss functions. In classification, minimising the cross-entropy loss is directly equivalent to maximising log-likelihood under a categorical likelihood [REFERENCE], thus there is inherently heteroscedastic uncertainty quantification for predictions (although still only aleoteric uncertainty)\footnote{When we predict a categorical distribution over $y$ given some input $\mathbf{x}$, i.e. $p(y|\mathbf{x})=\text{Cat}(y|\mathbf{x})$, the output is a probability distribution over the classes.}. However, it is often noted that neural networks trained with cross-entropy loss, regardless of their inherent uncertainty quantification are \textit{poorly calibrated} [REFERENCE] - a perhaps somewhat surprising observation considering that cross-entropy is a proper scoring rule and thus in the data infinitum setting, the model will be perfectly calibrated [REFERENCE]. In regression tasks, the minimizitation of the mean-squared error loss function is equivalent to maximising the log-likelihood under a gaussian likelihood with constant (homoscedastic) noise. Should want one want heteroscedastic noise in regression tasks, additional modelling choices must be done, for example by adding an additional noise output in the neural network\footnote{Rather than predicting $p(y^*|\mathbf{x}^*)=\mathcal{N}(\mu_{\bm{\theta}}(\mathbf{x}), \sigma^2)$, we predict $p(y^*|\mathbf{x}^*)=\mathcal{N}(\mu_{\bm{\theta}}(\mathbf{x}), \sigma_{\bm{\theta}}^2(\mathbf{x}))$.} - yet this is still only aleoteric uncertainty.
