@@ -46,7 +46,7 @@ This chapter builds the geometric foundation used throughout the thesis. The gui
 for a fixed dataset \(\mathcal D\), a model is best understood through the dataset-restricted \emph{forward map}
 \(F_{\mathcal D}:\Theta \to \mathcal Z\) that sends parameters to predictive quantities (e.g. logits).
 Parameters that produce identical predictions on \(\mathcal D\) lie on the same \emph{fibre}
-\(F_{\mathcal D}^{-1}(z)\), and these fibres capture the model's non-identifiabilities and symmetries.
+\(F_{\mathcal D}^{-1}(z)\), and these fibres capture the model's continuous reparameterizations.
 
 Under mild regularity conditions, the parameter space admits a \emph{local product} structure: a decomposition of the parameter space into directions that change predictions and directions that move within fibres. The upshot of this construction is that Bayesian computation takes place on a parameter space that is not Euclidean, but instead carries a geometry explicitly accounting for \emph{reparameterizations} of the forward map—here, a neural network
 
@@ -59,8 +59,7 @@ We begin with an informal treatment anchored in the linear-Gaussian case, where 
 \subsection{Global product space in the linear--Gaussian case}
 \label{subsec:linear_gaussian_global_product}
 
-To build intuition on the geometry of the parameter space without any differential geometry we begin with Bayesian Linear Regression with a Gaussian prior and Gaussian likelihood. In this model, the parameter space
-really \emph{is} a global product: there is a whole subspace of directions that do not change the dataset-restricted predictions at all.
+To build intuition on the geometry of the parameter space without any differential geometry, we begin with Bayesian Linear Regression with a Gaussian prior and a Gaussian likelihood. In this model, the parameter space has a global product structure: there is a whole subspace of directions that do not change the dataset-restricted predictions at all.
 
 \paragraph{Model and the dataset-restricted map.}
 Let $\theta\in\Theta=\mathbb{R}^P$. Consider a linear forward map
@@ -68,7 +67,7 @@ Let $\theta\in\Theta=\mathbb{R}^P$. Consider a linear forward map
   f_\theta(x) \;=\; x^\top \theta \in \mathbb{R}.
 \]
 Given a supervised dataset $\mathcal{D}=\{(x^{(n)},y^{(n)})\}_{n=1}^N$, stack the inputs into the design matrix
-$X\in\mathbb{R}^{N\times P}$ with rows $(x^{(n)})^\top$, and stack labels into $Y\in\mathbb{R}^N$.
+$X\in\mathbb{R}^{N\times P}$ with rows $(x^{(n)})^\top$, and stack labels into $Y\in\mathbb{R}^N$. We are interested in the setting where $X$ is low-rank, i.e. it has zero singular values. A sufficient condition for this is when $N < P$, so the analysis below is especially relevant for \emph{overparameterized models}.
 The dataset-restricted prediction map is
 \[
   F_{\mathcal{D}}(\theta)
@@ -89,7 +88,7 @@ Y \mid \theta \sim \mathcal{N}(X\theta,\sigma^2 I)
 }_{\scriptstyle \text{prior}}
 \]
 
-\paragraph{Fibres are affine subspaces (parallel ``sheets'').}
+\paragraph{Fibres are affine subspaces}
 Two parameters $\theta,\theta'$ are indistinguishable on the dataset iff $X\theta=X\theta'$,
 i.e.\ iff $X(\theta-\theta')=0$. So the fibre through $\theta$ is
 \[
@@ -97,8 +96,8 @@ i.e.\ iff $X(\theta-\theta')=0$. So the fibre through $\theta$ is
   \;=\;
   \theta + \ker(X).
 \]
-This is already the core intuition: \emph{moving inside $\ker(X)$ does not change the logits/predictions on the dataset}.
-Geometrically, parameter space is foliated by parallel affine subspaces (``sheets'').
+Moving inside $\ker(X)$ does not change the logits/predictions on the dataset.
+Geometrically, parameter space is foliated by parallel affine subspaces.
 
 \paragraph{A global splitting: prediction-changing vs prediction-preserving.}
 Because $F_{\mathcal{D}}$ is a linear map, there is a global, dataset-dependent decomposition of parameter space into the kernel subspace and a co-image subspace:
@@ -109,7 +108,7 @@ Because $F_{\mathcal{D}}$ is a linear map, there is a global, dataset-dependent 
   \;\oplus\;
   \underbrace{\mathrm{im}(X^\top)}_{\text{prediction-changing (row space)}}.
 \]
-Every $\theta$ can be uniquely written as
+This follows from the rank-nullity theorem. Every $\theta$ can be uniquely written as
 \[
   \theta = \theta_{\parallel} + \theta_{\perp},
   \qquad
@@ -121,164 +120,97 @@ and crucially
   \quad\text{(the dataset predictions ignore }\theta_{\perp}\text{ entirely).}
 \]
 
-\begin{figure}[t]
+
+\begin{figure}[ht]
 \centering
-% Two clean panels using TikZ; no weird baselines, no misalignment.
-\begin{tikzpicture}[scale=0.95, every node/.style={font=\small}]
-  % Panel (a)
-  \begin{scope}[xshift=0cm]
-    \node[font=\small\bfseries] at (0,3.4) {(a) Fibres and a global split};
-    % axes
-    \draw[->] (-3,0) -- (3,0) node[below right] {$\theta_1$};
-    \draw[->] (0,-3) -- (0,3) node[above left] {$\theta_2$};
-
-    % kernel direction (vertical) and row space (horizontal)
-    \draw[very thick] (0,-3) -- (0,3) node[above] {$\ker(X)$};
-    \draw[very thick] (-3,0) -- (3,0) node[right] {$\mathrm{im}(X^\top)$};
-
-    % "fibres" as dashed lines parallel to ker(X): take toy X = [1 0]
-    \foreach \x in {-2.2,-1.4,-0.6,0.6,1.4,2.2}{
-      \draw[dashed,gray] (\x,-3) -- (\x,3);
-    }
-    \node[gray] at (2.2,2.6) {fibres $X\theta=\text{const}$};
-
-    % arrows indicating decomposition
-    \fill (1.6,1.0) circle (1.5pt);
-    \node[anchor=west] at (1.7,1.0) {$\theta$};
-    \draw[->,thick] (1.6,1.0) -- (1.6,2.3) node[midway,right] {$\theta_\perp$};
-    \draw[->,thick] (1.6,1.0) -- (2.9,1.0) node[midway,below] {$\theta_\parallel$};
-  \end{scope}
-
-  % Panel (b)
-  \begin{scope}[xshift=7.2cm]
-    \node[font=\small\bfseries] at (0,3.4) {(b) Prior vs likelihood vs posterior};
-    % axes
-    \draw[->] (-3,0) -- (3,0) node[below right] {$\theta_1$};
-    \draw[->] (0,-3) -- (0,3) node[above left] {$\theta_2$};
-
-    % Likelihood stripes (toy: depends mostly on theta1)
-    \foreach \x in {-2.0,-1.2,-0.4,0.4,1.2,2.0}{
-      \draw[dashed,gray] (\x,-3) -- (\x,3);
-    }
-    \node[gray] at (1.7,2.6) {likelihood};
-
-    % Prior contours (circles)
-    \draw[blue!50!black] (0,0) circle (0.9);
-    \draw[blue!50!black] (0,0) circle (1.6);
-    \node[blue!50!black] at (-2.1,2.6) {prior};
-
-    % Posterior contour (elongated along ker direction)
-    \draw[red!70!black, very thick] (0.6,0) ellipse (0.8 and 2.0);
-    \node[red!70!black] at (2.1,-2.6) {posterior};
-  \end{scope}
-\end{tikzpicture}
-\caption{\textbf{Linear--Gaussian regression makes the ``bundle'' geometry visible.}
-(a) Fibres are affine subspaces: moving along $\ker(X)$ does not change dataset predictions $X\theta$.
-(b) The likelihood constrains the prediction-changing direction (here $\theta_1$), while the
-prediction-preserving direction (here $\theta_2$) remains broad; with an isotropic prior, the posterior
-typically stays prior-like along $\ker(X)$.}
-\label{fig:linear_gaussian_geometry}
+\includegraphics[width=0.6\linewidth]{chapters/ch3_figures/linear_kernel.pdf}
+\caption{The weight space can be decomposed into directions of \emph{reparameterizations} and \emph{functional changes}. For linear models, these are linear subspaces given by the kernel and the image, respectively.\looseness=-1}
+\label{fig:stacked_kernels}
 \end{figure}
 
-\paragraph{Posterior factorization: Bayes learns only on the row space.}
-In this model the posterior is exactly Gaussian:
+
+\paragraph{Posterior factorization}
+In this model, the posterior is exactly Gaussian,
 \[
   p(\theta\mid \mathcal{D})
   \;=\;
-  \mathcal{N}\!\bigl(\theta \,;\, m,\Sigma\bigr),
+  \mathcal{N}\!\bigl(\theta \,;\, \mu,\Sigma\bigr),
   \qquad
   \Sigma^{-1} = \tau^{-2}I + \sigma^{-2}X^\top X,
   \qquad
-  m = \sigma^{-2}\Sigma X^\top y.
+  \mu = \sigma^{-2}\Sigma X^\top y.
 \]
-The key structural fact is that the likelihood depends only on $X\theta$, hence only on the component
-$\theta_{\parallel}\in\mathrm{im}(X^\top)$.
-If the prior is isotropic Gaussian, it also respects the orthogonal splitting
-$\mathbb{R}^P = \mathrm{im}(X^\top)\oplus \ker(X)$, which means the posterior separates into:
+
+Crucially, the decomposition of the parameter space also has a profound effect on the posterior: It can also be decomposed into these two subspaces. 
+
+Given our assumption that $X$ is low-rank, $X^\top X$ admits an eigendecomposition, with eigenvectors $\mathbf{U_1}$ and $\mathbf{U_2}$ corresponding to non-zero and zero eigenvalues, respectively. Then the posterior covariance is given by: 
+
+\begin{align}
+\Sigma
+&=\Bigg(
+\sigma^{-2}
+\left[\begin{array}{c}
+\mathbf{U}_1^{\top}\\ \hline \mathbf{U}_2^{\top}
+\end{array}\right]
+\left[\begin{array}{c|c}
+\tilde{\mathbf{\Lambda}} & \mathbf{0}\\ \hline
+\mathbf{0} & \mathbf{0}
+\end{array}\right]
+\left[\begin{array}{c}
+\mathbf{U}_1\\ \hline \mathbf{U}_2
+\end{array}\right]
+\;+\;\tau^{-2}\mathbf{I}
+\Bigg)^{-1} \nonumber\\
+&=
+\mathbf{U}_1\big(\sigma^{-2}\tilde{\mathbf{\Lambda}}+\tau^{-2}\mathbf{I}_r\big)^{-1}\mathbf{U}_1^{\top}
+\;+\;
+\tau^{2}\,\mathbf{U}_2\mathbf{U}_2^{\top}.
+\end{align}
+
+
+
+Moreover, since $X^\top y\in\mathrm{im}(X^\top)=\mathrm{span}(\mat U_1)$, the posterior mean has no $\mat U_2$
+component:
 \[
-  p(\theta\mid\mathcal{D})
-  \;=\;
-  p(\theta_{\parallel}\mid\mathcal{D})\; p(\theta_{\perp}),
+\mu=\sigma^{-2}\Sigma X^\top y
+=
+\mathbf{U_1} m_1,
+\qquad
+m_1:=\sigma^{-2}(\tilde{\mathbf{\Lambda}}+\alpha \mathbf I_r)^{-1}\mathbf{U_1}^\top X^\top y,
+\qquad
+\mathbf U_2^\top \mu=0.
 \]
-where $\theta_{\perp}\sim\mathcal{N}(0,\tau^2 I)$ remains \emph{unchanged by the data}.
-Intuitively: the data can only update what it can see, and on the dataset it can only see the row-space
-component.
 
+We can then write the posterior as the sum of two independent random variables i.e. $\theta \overset{d}{=} \theta_{\textrm{im}} + \theta_{\textrm{ker}}$, corresponding to the posterior projected onto the prediction-changing subspace and the prior projected onto the  prediction-preserving subspace, respectively: 
+\begin{align}
+    &\theta_{\textrm{im}}\mid\mathcal D\sim\mathcal{N}(\mu,\;\mathbf{U_1}(\tilde{\mathbf{\Lambda}}+\alpha \mathbf I_r)^{-1}\mathbf{U_1}^\top),
+\qquad
+\theta_{\textrm{ker}}\mid\mathcal D\sim\mathcal{N}(\mathbf{0},\;\alpha^{-1}\mathbf{U_2}\mathbf{U_2}^\top),
+\\
+&\theta_{\textrm{im}} \perp\ \theta_{\textrm{ker}}
+\end{align}
 
+\todo{Add illustration of this}
 
-\paragraph{Posterior factorization: Bayes learns only on the row space.}
-In this model the posterior is exactly Gaussian,
-\[
-  p(\theta\mid \mathcal{D})
-  \;=\;
-  \mathcal{N}\!\bigl(\theta \,;\, m,\Sigma\bigr),
-  \qquad
-  \Sigma^{-1} = \tau^{-2}I + \sigma^{-2}X^\top X,
-  \qquad
-  m = \sigma^{-2}\Sigma X^\top y.
-\]
-But the key point is not merely tractability: it is that Bayesian updating \emph{acts only through}
-the dataset-restricted map \(F_{\mathcal D}(\theta)=X\theta\).
-Equivalently, the likelihood depends on \(\theta\) only via \(z:=X\theta\), so inference can be viewed
-as first updating \(z\) (a Gaussian variable in \(\mathbb R^N\)) and then lifting back to parameter space along the fibres
-\(\theta+\ker(X)\). In this linear setting, conditioning ``along the map'' coincides with conditioning on the affine fibre,
-because the map has constant Jacobian: the conditional measure on a fibre is simply the prior restricted to that fibre.
+\paragraph{Prediction under the decomposed posterior}
+For any integrable test function $\varphi:\mathbb{R}^P\to\mathbb{R}$
+\begin{align}
+    \mathbb{E}[\varphi(\theta)\mid\mathcal D] 
+    &= \iint \varphi(\theta_{\textrm{im}} + \theta_{\textrm{ker}})\,p(\theta_{\textrm{im}}\mid\mathcal D)\,
+    p(\theta_{\textrm{ker}})\;d\theta_{\textrm{im}}\,d\theta_{\textrm{ker}} \\
+    &= \int \Bigg[ \int \varphi(\theta_{\textrm{im}} + \theta_{\textrm{ker}})\,p(\theta_{\textrm{ker}})\;d\theta_{\textrm{ker}} \Bigg]\,
+    p(\theta_{\textrm{im}}\mid\mathcal D)\;d\theta_{\textrm{im}}
+    \qquad \text{(Fubini--Tonelli)}.
+\end{align}
 
-To make the geometry explicit, choose an orthogonal splitting
-\(\mathbb{R}^P = \mathrm{im}(X^\top)\oplus \ker(X)\) and write \(\theta=\theta_{\parallel}+\theta_{\perp}\).
-Then \(m\in \mathrm{im}(X^\top)\), and the posterior covariance contracts only in the data-visible directions:
-if \(s_1,\dots,s_r\) are the nonzero singular values of \(X\), the posterior variances along the corresponding right-singular
-directions are \((\tau^{-2}+\sigma^{-2}s_i^2)^{-1}\), whereas along every fibre direction in \(\ker(X)\) they remain exactly \(\tau^2\).
-In particular, for an isotropic prior the posterior \emph{disintegrates} as
-\[
-  p(\theta\mid\mathcal{D})
-  \;=\;
-  p(\theta_{\parallel}\mid\mathcal{D})\; p(\theta_{\perp}),
-  \qquad
-  \theta_{\perp}\sim\mathcal{N}(0,\tau^2 I)\ \ \text{independent of } \mathcal D,
-\]
-so the data can only update what it can ``see'' through \(X\).
-
-This has a sharp predictive consequence. For a new input \(x_\*\), decompose \(x_\*=x_{\*,\parallel}+x_{\*,\perp}\) with
-\(x_{\*,\parallel}\in\mathrm{im}(X^\top)\) and \(x_{\*,\perp}\in\ker(X)\). Then the epistemic part of the predictive variance splits as
-\[
-  \mathrm{Var}_{\theta\mid \mathcal D}\!\bigl[x_\*^\top \theta\bigr]
-  \;=\;
-  x_{\*,\parallel}^\top \Sigma\,x_{\*,\parallel}
-  \;+\;
-  \tau^2 \,\|x_{\*,\perp}\|^2.
-\]
-Thus any component of \(x_\*\) orthogonal to the training row space induces an \emph{irreducible prior-dominated} uncertainty term:
-even in this fully tractable model, the fibre directions are invisible on \(\mathcal D\) yet can matter off \(\mathcal D\).
-
-\paragraph{A one-sentence intuition pump.}
-\emph{Linear regression with $P>N$ is the simplest example of ``sloppy directions'': there is a whole
-subspace of parameters that produces identical dataset predictions, and the posterior cannot learn there
-unless the prior breaks the symmetry.}
-
-\paragraph{Why this matters for deep nets (preview of the next subsection).}
-For neural networks, $F_{\mathcal D}(\theta)$ is no longer linear in $\theta$.
-But near any reference point $\theta_0$, we can locally linearize:
-\[
-  F_{\mathcal D}(\theta_0 + \delta)
-  \;\approx\;
-  F_{\mathcal D}(\theta_0) + J_{\mathcal D}(\theta_0)\,\delta,
-\]
-where $J_{\mathcal D}(\theta_0)$ is the stacked Jacobian of dataset-restricted predictions.
-This is the nonlinear analogue of $X$.
-In the next subsection, we use this local linear picture to motivate a \emph{local} product structure:
-directions in $\ker(J_{\mathcal D}(\theta_0))$ are (to first order) prediction-preserving, while a complementary
-subspace controls changes in predictions. This is the geometric seed of the fibre bundle viewpoint.
-
+If this test function happens to be the likelihood of a new observation then the integral above represents Bayesian model averaging. Thus the decomposition of the parameter space affects both Bayesian inference and prediction.
 
 
 \subsection{From global to local: linearization gives a local product space}
 \label{subsec:local_linearization_product}
 
-The linear--Gaussian case is unusually clean because the dataset-restricted model map
-\(F_{\mathcal D}(\theta)=X\theta\) is linear, so the ``fibre directions'' \(\ker(X)\) and the
-``prediction-changing directions'' \(\mathrm{im}(X^\top)\) form a \emph{global} decomposition of
-\(\mathbb{R}^P\). For neural networks, we should not expect any global linear structure.
+In the Linear--Gaussian case, the parameter space has a simple geometry: It is a product of two subspaces.  For neural networks, we should not expect a global product structure. 
+
 However, the key lesson survives: \emph{locally, the model map looks linear}, and therefore
 the parameter space looks like a \emph{local} product of fibre directions and prediction-changing directions.
 
@@ -859,7 +791,7 @@ typically stays prior-like along $\ker(X)$.}
 \label{fig:linear_gaussian_geometry}
 \end{figure}
 
-\paragraph{Posterior factorization: Bayes learns only on the row space.}
+\paragraph{Posterior factorization}
 In this model the posterior is exactly Gaussian:
 \[
   p(\theta\mid \mathcal{D})
