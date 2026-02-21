@@ -15,12 +15,12 @@
   space admits local coordinates in which it looks like a product
   \(\text{(prediction-changing)} \times \text{(prediction-preserving)}\).
 
-  \item \textbf{Intrinsic splitting via an Ehresmann connection.}
+  \item \textbf{ Ehresmann connection.}
   Choosing a horizontal complement to the vertical space \(\ker(dF_{\mathcal D})\) defines an Ehresmann
   connection, giving an intrinsic decomposition \(T_\theta\Theta = H_\theta \oplus V_\theta\) without relying
   on an embedded “image manifold”.
 
-  \item \textbf{Why Bayes cares.}
+  \item \textbf{bayes stuff.}
   Posterior mass and uncertainty should respect this structure: vertical directions capture symmetries /
   non-identifiabilities, while horizontal directions control changes in predictions. This viewpoint clarifies
   how approximations (Laplace, VI) and samplers (MCMC) can be designed to move efficiently across fibres.
@@ -32,9 +32,9 @@
 \noindent\textbf{Chapter \thechapter\ -- What is the Parameter Space Like:}\par\vspace{3pt}
 
 \begin{tabular}{@{}p{0.83\linewidth}r@{}}
-\hyperref[sec:informal_local_product]{\thechapter.2\;\;Informal picture: parameter space as a local product space} \dotfill & \pageref{sec:informal_local_product}\\
-\hyperref[sec:parammanifold_formal]{\thechapter.3\;\;Formal picture: parameter manifold and bundle viewpoint} \dotfill & \pageref{subsec:parammanifold_formal}\\
-\hyperref[sec:sowhat]{\thechapter.4\;\;So what? Geometric quantities and why we care} \dotfill & \pageref{sec:sowhat}\\
+\hyperref[sec:informal_local_product]{\thechapter.1\;\;Informal picture: parameter space as a local product space} \dotfill & \pageref{sec:informal_local_product}\\
+\hyperref[sec:parammanifold_formal]{\thechapter.2\;\;Formal picture: parameter manifold and bundle viewpoint} \dotfill & \pageref{subsec:parammanifold_formal}\\
+\hyperref[sec:sowhat]{\thechapter.3\;\;So what? Geometric quantities and why we care} \dotfill & \pageref{sec:sowhat}\\
 \end{tabular}
 \end{minipage}
 \end{center}
@@ -237,7 +237,7 @@ i.e.\ the sets of parameters that agree on all training inputs.
 
 \paragraph{Local Linear Approximation}
 
-We stack the per-datum Jacobians of the model into $J_{\mathcal{D}}(\theta) = [\frac{\partial f_\theta(x^{(1)})}{\partial \theta}; \ldots; [\frac{\partial f_\theta(x^{(N)})}{\partial \theta}] \in \mathbb{R}^{NO \times D}$. Then under mild regularity conditions, for any \(\theta_0\in\Theta\) and \(\theta=\theta_0+\delta\).
+We stack the per-datum Jacobians of the model into $J_{\mathcal{D}}(\theta) = \big[\frac{\partial f_\theta(x^{(1)})}{\partial \theta}; \ldots; \frac{\partial f_\theta(x^{(N)})}{\partial \theta}\big] \in \mathbb{R}^{NO \times P}$. Then under mild regularity conditions, for any \(\theta_0\in\Theta\) and \(\theta=\theta_0+\delta\).
 By Taylor's theorem,
 \begin{equation}
   F_{\mathcal D}(\theta_0+\delta)
@@ -360,8 +360,10 @@ $V_\theta=\ker(J_{\mathcal D}(\theta))$ and $H_\theta$ vary across parameter spa
 %============================================================
 \subsection{Background}
 \label{sec:background}
+\emph{The following sections are fairly technical and perhaps more comprehensive than necessary. Understanding all of the details of how we formalize the intuition sketched above is not necessary for understanding the rest of this thesis. Readers not interested in the formal details can feel free to skip to \Cref{chap:linalg}.}
+
 We will briefly introduce the concepts of differential geometry that are necessary to formalize the intuition we have sketched above. For the sake of brevity, we will omit standard proofs and detailed exposition. For a more detailed survey of differential geometry that focuses not primarily on metrics or distances, but on \emph{local product structure}, \emph{symmetry}, and the ability to compare
-infinitesimal data across such structures, we highly recommend \citep{Sharpe1997}. Additionally, note that, since the following sections are fairly technical, and perhaps more comprehensive than necessary. Not all of the constructions below are used explicitly in the following chapters, although we always give an intimation of how they might be used in the future . Readers not interested in the formal details can feel free to skip to \Cref{subsec:takeaway_lazy_reader}.
+infinitesimal data across such structures, we highly recommend \citep{Sharpe1997}. 
 \subsubsection{Manifolds}
 \label{subsec:background_smooth_structure}
 

@@ -1,0 +1,549 @@
+% =====================================================================
+% Chapter 5: Laplace Approximation  (rewrite of chapter introduction)
+% =====================================================================
+
+\chapter{Laplace Approximation: Underfitting and Laplace Diffusion}
+\label{ch:laplace}
+
+\begin{keypointsbox}
+\textbf{Key points (Chapter~\thechapter).}
+\begin{enumerate}
+    \item \textbf{Laplace lives on a geometry.}
+    Around a reference point (typically a MAP), Laplace approximations are Gaussian measures on the
+    tangent space, and their behaviour is governed by the dataset-restricted Jacobian (and induced
+    curvature/projection structure) developed in Chapters~\ref{ch:parameter_space_geometry}--\ref{ch:linear_algebra}.  % adjust labels
+
+    \item \textbf{The linearization puzzle.}
+    Empirically, a \emph{linearized} predictive can outperform a \emph{sampled} Laplace predictive in deep
+    networks, even though linearization seems like an additional approximation. This chapter explains
+    this phenomenon through the mismatch between fibre directions and Jacobian-kernel directions away
+    from the linear regime.
+
+    \item \textbf{Two remedies with geometric meaning.}
+    We develop (i) \emph{Laplace diffusion}, which turns a local metric into a sampling procedure that is
+    stable to reparameterizations, and (ii) a \emph{null-space (projected) posterior} whose covariance is
+    supported on dataset-preserving directions, preventing training-set underfitting by construction.
+
+    \item \textbf{Model selection at scale.}
+    The same geometric objects give a scalable marginal-likelihood objective (fit + log-determinant
+    complexity). Using the matrix-free primitives from Chapter~\ref{ch:linear_algebra} (notably \textsc{Proj}
+    and \textsc{LogDet}), this objective can be optimized in large models.
+\end{enumerate}
+\end{keypointsbox}
+
+\begin{center}
+\begin{minipage}{0.95\linewidth}
+\noindent\textbf{Chapter \thechapter\ -- Geometric Computations via Matrix-Free Linear Algebra:}\par\vspace{3pt}
+
+\begin{tabular}{@{}p{0.83\linewidth}r@{}}
+\hyperref[sec:bridge_dg_la]{\thechapter.1\;\;From Geometry to Linear Algebra} \dotfill & \pageref{sec:bridge_dg_la}\\
+\hyperref[sec:la_computations]{\thechapter.2\;\;Efficient Linear Algebra for Deep Learning} \dotfill & \pageref{sec:la_computations}\\
+\end{tabular}
+\end{minipage}
+\end{center}
+
+So far we have studied the geometry of the parameter space in Bayesian Deep Learning in \cref{chap:setting}. We have also seen practical algorithms for making computations in the parameter space equipped with this geometry \cref{chap:linalg}. In this chapter we will apply this framework to a standard Approximate Bayesian Inference method, specifically the Laplace Approximation. We will explain why Laplace Approximation fails in the Bayesian Deep learning setting and propose several methods that addresses this failure mode.
+
+\section{Problem with Laplace Approximation: The Linearization Puzzle}
+\label{sec:laplace_linearization_puzzle}
+We stick to our usual notation where a fixed dataset is denoteb by $\mathcal{D}= (x_1, \dots, x_N)$, we have a model map defined as $F_{\mathcal D}:\Theta\to \mathbb R^{NO}$ which maps each parameter to logits of the entire dataset, $\theta \mapsto \eta = (\eta_1, \dots, \eta_N)$. These logits can then be used to compute the likelihood of the observed data. $f(\theta, x)$ denotes the model map on single datapoints.
+
+Laplace approximations are among the simplest and most popular approximate posteriors for Bayesian
+neural networks.  They place a Gaussian in parameter space by a second-order expansion of the
+log-posterior around a mode $\hat{\theta}$, which is our approximate posterior. This results in a Gaussian approximate posterior $\mathcal{N}\left(\theta ~|~ \hat{\theta}, \mathbf{H}_{\hat{\theta}}^{-1}\right)$, where $\mathbf{H}_{\hat{\theta}}$ is the Hessian of the loss function. Typically, the Hessian is replaced by the Generalised Gauss-Newton because the Hessian is not guaranteed to be Positive Definite (see \Cref{chap:background} for a more detailed discussion). This gives us the following approximate posterior:
+
+\begin{align}
+\begin{split}
+  q(\theta | \mathcal{D}) &= \mathcal{N}\left(\theta ~|~ \hat{\theta}, (\textrm{GGN}_{\hat{\theta}} + \alpha\mathbb{I})^{-1}\right), \\ %\quad \text{where} \\
+  \textrm{GGN}_{\hat{\theta}} &= \sum_{i=1}^N \mathbf{J}_{x_i}(\hat{\theta})^\top \mathbf{\tilde{H}}(\eta_i)  \mathbf{J}_{x_i}(\hat{\theta}) \\
+  &= \mathbf{J}_{\mathcal{D}}(\hat{\theta})^\top \mathbf{\tilde{H}}(\eta)  \mathbf{J}_{\mathcal{D}}(\hat{\theta}).
+\end{split}
+\end{align}
+
+where $\mathbf{\tilde{H}}$ is the Hessian of the log-likelihood with respect to the neural network outputs. 
+
+Given the Gaussian distribution $q(\theta|\mathcal{D})$ over the parameter space, we can obtain a predictive distribution by integrating the approximate posterior against the model likelihood. 
+
+\begin{align}
+    p(\mathbf{y}^*|\mathbf{x}^*\!, \mathcal{D}) = \mathbb{E}_{\theta\sim q}[p(\mathbf{y}^*|f(\theta, \mathbf{x}^*))] % \\
+                            \approx \frac{1}{S}\! \sum_{i=1}^S p(\mathbf{y}^*|f(\theta_i, \mathbf{x}^*)), \quad \theta_i \sim q.
+\end{align}
+
+We refer to this predictive method as \emph{sampled Laplace}. The crucial detail to highlight here is that after sampling weights from the approximate posterior we use the neural network to make predictions and then average them; this is standard Bayesian Model Averaging. 
+
+Recent works have suggested \emph{linearizing} the neural network in the likelihood model to obtain the predictive distribution \citep{immer2021improving},
+\begin{align}
+    p(\mathbf{y}^*|\mathbf{x}^*\!, \mathcal{D}) = \mathbb{E}_{\theta\sim q}[p(\mathbf{y}^*|f^{\hat{\theta}}_{\mathrm{lin}}(\theta, \mathbf{x}^*))] %\\
+                            \approx \frac{1}{S}\! \sum_{i=1}^S p(\mathbf{y}^*|f^{\hat{\theta}}_{\mathrm{lin}}(\theta_i, \mathbf{x}^*)), \quad \theta_i \sim q.
+\end{align}
+where $f^{\hat{\theta}}_{\mathrm{lin}}(\theta, \mathbf{x}^*) = f (\hat{\theta}, x) + \mathbf{J}_{x_i} (\theta - \hat{\theta})$, is the first order Taylor expansion of the model map around the mode $\hat{\theta}$. This is referred to as \emph{linearised Laplace}. 
+
+As seen in \Cref{fig:??}, this leads to vastly different predictive behaviour. Sampled Laplace is known to severely \emph{underfit} \citep{lawrence2001variational, immer2021scalable}, whereas the linearised Laplace approximation does not (\citealt{immer2021improving}. It is an open problem \emph{why} the crude linearization is beneficial \citep{papamarkou2024position}. This is what we mean by the lienarization puzzle
+
+\begin{tcolorbox}[colback=red!5!white,colframe=red!75!black]
+  $\textbf{Linearization Puzzle:} $ Why does Laplace Approximation display severe underfitting on the training dataset when using the neural network predictive? Why does linearizing the neural network model resolve this issue?
+\end{tcolorbox}
+
+The geometry that we have described in the previous chapters can explain this phenomenon. First, we will give a description of our solution, relying on Taylor approximations, and then restate this solution in more precise geometric language. 
+
+
+Let $\hat{\theta}$ denote the mode (typically MAP), and draw a Laplace perturbation
+\[
+\theta=\hat{\theta}+\delta,
+\qquad
+\delta \sim \mathcal{N}(0,\Sigma),
+\qquad
+\Sigma=(\mathrm{GGN}_{\hat{\theta}}+\alpha I)^{-1}.
+\]
+For any input $x$, expand the network map $f(\theta,x)$ around $\hat{\theta}$:
+\begin{equation}
+\label{eq:taylor_single_x}
+f(\hat{\theta}+\delta,x)
+=
+f(\hat{\theta},x)
++
+J_x(\hat{\theta})\,\delta
++
+r_x(\delta),
+\qquad
+r_x(\delta)=\mathcal{O}(\|\delta\|^2).
+\end{equation}
+Stacking over the dataset gives the analogous expansion for $F_{\mathcal{D}}$,
+\begin{equation}
+\label{eq:taylor_dataset}
+F_{\mathcal{D}}(\hat{\theta}+\delta)
+=
+F_{\mathcal{D}}(\hat{\theta})
++
+J_{\mathcal{D}}(\hat{\theta})\,\delta
++
+r_{\mathcal{D}}(\delta).
+\end{equation}
+The \emph{linearized} model discards the remainder term by construction; i.e.
+\[
+F^{\hat{\theta}}_{\mathrm{lin}}(\hat{\theta}+\delta)
+=
+F_{\mathcal{D}}(\hat{\theta}) + J_{\mathcal{D}}(\hat{\theta})\delta.
+\]
+Thus, any qualitative discrepancy between sampled Laplace and linearized Laplace must be explained by
+how the Laplace covariance $\Sigma$ interacts with the nonlinear remainder $r_{\mathcal{D}}(\delta)$.
+
+\paragraph{Decomposition of Laplace Covariance.}
+
+Since $\mathrm{GGN}_{\hat\theta}$ is symmetric positive semidefinite, $\mathbb R^D$ decomposes as an
+\emph{orthogonal} direct sum of its image and kernel,
+\begin{equation}
+\mathbb R^D \;=\; \texttt{im}(\mathrm{GGN}_{\hat\theta}) \oplus \texttt{null}(\mathrm{GGN}_{\hat\theta}).
+\label{eq:ggn_image_kernel_split}
+\end{equation}
+Moreover, in the common case where we ignore the output Hessian (e.g.\ Gaussian regression), we have $\mathrm{GGN}_{\hat\theta}=J_{\mathcal D}(\hat\theta)^\top J_{\mathcal D}(\hat\theta)$ which implies
+\begin{align}
+\texttt{null}(\mathrm{GGN}_{\hat\theta})=\texttt{null}\!\big(\mathbf{J}_{\mathcal D}(\hat\theta)\big),\qquad \texttt{im}(\mathrm{GGN}_{\hat\theta})=\texttt{im}\!\big(\mathbf{J}_{\mathcal D}(\hat\theta)^\top\big)
+\end{align}
+i.e.\ the ``kernel directions'' of the Laplace precision coincide exactly with the Jacobian-kernel
+directions of the dataset map.
+Let $\mathrm{GGN}_{\hat\theta}=\mathbf{U}^\top \Lambda \mathbf{U}$ be an eigendecomposition and split the eigenvectors as
+$\mathbf{U}=[\mathbf{U}_{\mathrm{im}};\mathbf{U}_{\mathrm{ker}}]$ corresponding to nonzero and zero eigenvalues
+$\tilde\Lambda$ and $0$, respectively. Then the covariance admits the explicit block decomposition
+\begin{equation}
+\Sigma
+= \mathbf{U}_{\mathrm{im}}^\top\,(\tilde\Lambda+\alpha I)^{-1}\,\mathbf{U}_{\mathrm{im}}
+\;+\;
+\alpha^{-1}\,\mathbf{U}_{\mathrm{ker}}^\top \mathbf{U}_{\mathrm{ker}}.
+\label{eq:laplace_covariance_decomposition}
+\end{equation}
+Consequently, any Laplace sample can be written as
+\[
+\theta = \hat\theta + \delta_{\mathrm{im}} + \delta_{\mathrm{ker}},
+\qquad
+\delta_{\mathrm{im}}\in\texttt{im}(\mathrm{GGN}_{\hat\theta}),\ \ 
+\delta_{\mathrm{ker}}\in\texttt{null}(\mathrm{GGN}_{\hat\theta}).
+\]
+The decomposition \eqref{eq:laplace_covariance_decomposition} also shows that all variance in the
+kernel component is purely prior-driven (it scales as $\alpha^{-1}$), since the data contribute no
+curvature in directions annihilated by $J_{\mathcal D}(\hat\theta)$.
+
+\paragraph{Linearized Laplace cannot change training logits along Jacobian-kernel directions.}
+If we decompose a Laplace samples as $\theta=\hat\theta+\delta_{\mathrm{im}}+\delta_{\mathrm{ker}}$ with
+$\delta_{\mathrm{ker}}\in\Ker(J_{\mathcal D}(\hat\theta))$, then
+\begin{align}
+F^{\hat\theta}_{\mathcal D,\mathrm{lin}}(\hat\theta+\delta_{\mathrm{im}}+\delta_{\mathrm{ker}})
+-
+F_{\mathcal D}(\hat\theta) = J_{\mathcal D}(\hat\theta)\delta_{\mathrm{im}}
+\;+\;\underbrace{J_{\mathcal D}(\hat\theta)\delta_{\mathrm{ker}}}_{=\,0}
+.
+\label{eq:linlaplace_kernel_invariance_logits}
+\end{align}
+In words: \emph{under the linearized model, the kernel component of a Laplace perturbation is
+contributes no variance on the training set.} This means that under the linearized model, the in-distribution predictive variance is only dependent on $\delta_\mathrm{im}$, which is scaled by the eigenvalues of $\textrm{GGN}$. This ensures that the directions where the loss changes very fast have a very low variance and the directions where the loss changes slowly have higher variance. This prevents underfitting on the training data. Additionally, on out-of-distribution test points $J_{\mathcal D^\star}(\hat\theta)\delta_{\mathrm{ker}} \neq \mathbf{0}$. This leads to out-of-distribution predictive variance being significantly highthan er in-distribution predictive variance. This explains the nice properties of linearized Laplace. 
+
+On the other for Sampled Laplace, with the same perturbation $\delta$ we have
+
+\begin{align}
+F^{\hat\theta}_{\mathcal D,\mathrm{lin}}(\hat\theta+\delta_{\mathrm{im}}+\delta_{\mathrm{ker}})
+-
+F_{\mathcal D}(\hat\theta) = J_{\mathcal D}(\hat\theta)\delta_{\mathrm{im}}
+\;+\;\underbrace{J_{\mathcal D}(\hat\theta)\delta_{\mathrm{ker}}}_{=\,0} \;+\; r_\mathcal{D}(\delta_{\mathrm{ker}} + \delta_{\mathrm{im}})
+.
+\label{eq:laplace_kernel_invariance_logits}
+\end{align}
+
+The in-distribution predictive variance of sampled Laplace is also influenced by $\delta_{\mathrm{ker}}$ due to $r_\mathcal{D}(\delta_{\mathrm{ker}} + \delta_{\mathrm{im}})$. $\delta_{\mathrm{ker}}$ is effectively an isotropic gaussian projected onto the kernel subspace. This variance is not influenced by the eigenvalues of $\textrm{GGN}$, and thus is uninformed about the properties of the loss landscape. This is what leads to undesirable variance in-distribution.
+
+
+
+\todo{Add pictures}
+\section{Laplace Diffusion}
+\label{sec:laplace_diffusion}
+
+\paragraph{SDE on a Manifold}
+Given a Riemannian manifold $(\mathcal{M}, \mathbf{G})$, one of the simplest choice of distribution that respects the Riemannian metric $\mathbf{G}$ is a Riemannian diffusion (or Brownian motion, c.f.\@ \citet{hsu2002stochastic,girolami2011riemannian}) stopped at time $t$.
+ \begin{align}
+ \label{eq:riemannian_sde}
+      d\theta = \sqrt{2\tau}\mathbf{G}(\theta)^{-\frac{1}{2}} dW + \tau \Gamma d t %\\
+      \qquad \textnormal{where} \quad \Gamma_i(\theta) = \sum_{j=1}^D \frac{\partial}{\partial \theta_j} (\mathbf{G}(\theta)^{-1})_{ij}. 
+ \end{align}
+
+Practically, \eqref{eq:riemannian_sde} is simulated with Euler--Maruyama \citep{maruyama1955continuous}. The Christoffel term $\Gamma$ is often dropped for computational reasons; \citet{li2015preconditioned} show that the resulting error is bounded in a standard setting. With step size $h_t$, setting $\tau=1$ and dropping $\Gamma$, we obtain the update \begin{equation} \label{eq:em_update} \theta_{t+1} = \theta_t + \sqrt{2h_t}\,G(\theta_t)^{-1/2}\,\varepsilon_t, \qquad \varepsilon_t\sim\mathcal N(0,I). \end{equation}
+\subsection{Posterior Approximation}
+Building on this we define a generalization of the Laplace Approximation as, time $t=1$ marginal distribution of Riemannian Brownian Motion on the parameter space $\Theta$, where the metric is chosen to be $g_\theta = g_\theta^\mathrm{hor} \oplus g_\theta^\mathrm{ver}$. We refer to this approximate posterior as the \emph{Laplace Diffusion}. 
+
+\begin{definition}[Laplace diffusion posterior]
+\label{def:laplace_diffusion}
+Given a MAP estimate $\hat\theta\in\Theta$, and parameter space $\Theta$ with a
+Riemannian metric $g_\theta = g_\theta^{\mathrm{hor}}\oplus g_\theta^{\mathrm{ver}}$.
+Let $(\theta_t)_{t\in[0,1]}$ be the Riemannian Brownian motion on $(\Theta,g)$ started at $\hat\theta$,
+i.e.\ the solution to the SDE in \Cref{eq:rbm_sde} with initial condition $\theta_0=\hat\theta$.
+We define the \emph{Laplace diffusion} approximate posterior as the time--$t=1$ marginal
+\begin{align}
+    q_{\mathrm{LD}}(\,\cdot \mid \mathcal D) \;:=\;\rho_1(\theta),
+\end{align}
+\end{definition}
+
+
+Let $\rho_t(\theta)$ denote the density of the diffusion $(\theta_t)_{t\ge 0}$ started at
+$\theta_0=\hat\theta$. The probability distribution evolves according to the Fokker--Planck equation associated with the
+Riemannian Brownian motion, which can be written as a heat equation:
+\begin{equation}
+\partial_t \rho_t \;=\; \tau\,\Delta_g \rho_t,
+\qquad
+\rho_{t=0} \;=\; \delta_{\hat\theta},
+\label{eq:fokker_planck_heat}
+\end{equation}
+where $\Delta_g$ is the Laplace--Beltrami operator induced by the metric $g_\theta$,
+and $\delta_{\hat\theta}$ denotes a point mass at the mode. Thus the Laplace diffusion posterior
+$q_{\mathrm{LD}}(\cdot\mid\mathcal D)=\mathcal L(\theta_{1})$ is the time--$t=1$ fundamental solution of
+\eqref{eq:fokker_planck_heat}.
+
+To better understand this distribution lets consider the short-time (parametrix) expansion
+of the heat kernel: for $t\downarrow 0$ and $\theta$ near $\hat\theta$,
+\begin{align}
+\rho_t(\theta)
+\;\approx\;
+\frac{1}{(2\pi t)^{d/2}}
+\exp\!\left(-\frac{1}{2t}\,d_g(\theta,\hat\theta)^2\right)
+\Big(a_0(\theta,\hat\theta)+\mathcal O(t)\Big),
+\label{eq:parametrix}
+\end{align}
+
+where $d=\dim(\Theta)$, $d_g$ is the Riemannian distance induced by $g$. 
+
+The key takeaway here that Laplace diffusion is a local approximate posterior whose
+leading behaviour is controlled by $d_g(\theta,\hat\theta)^2$ as opposed to Euclidean distance as is the case standard Laplace Approximation.
+This matters in overparameterized models because directions corresponding to reparameterizations (fibres)
+can be \emph{curved} in parameter space: using geodesic distance means the approximation spreads mass
+according to the geometry of those curved reparameterization lines, rather than treating all directions
+as globally straight. Additionally, in normal coordinates around $\hat\theta$ we have
+\begin{equation}
+d_g(\hat\theta+\delta,\hat\theta)^2
+=
+\delta^\top G(\hat\theta)\,\delta \;+\; \mathcal O(\|\delta\|^3),
+\label{eq:dist_local_quad}
+\end{equation}
+so the leading term of \eqref{eq:parametrix} is Gaussian with covariance $t\,G(\hat\theta)^{-1}$, which corresponds to the standard Laplace Approximation. 
+
+
+\paragraph{Laplace Approximation and Laplace Diffusion.}
+Laplace diffusion is closely related to normal Laplace Approximation. 
+First, let's consider the \emph{linear} case. Suppose model map, $F_\mathcal{D} = J_\mathcal{D} \,\theta$ is a linear function the pullback metric is a constant metric and the horizontal subbundle cn be equipped with  $g_\theta^\mathrm{hor} = J_\mathcal{D}^\top J_\mathcal{D} + \alpha \mathbb{I}$, and $g_\theta^\mathrm{ver} = \alpha \mathbb{I}$. Thus $\mathbf{G}(\theta)$ is a constant metric. The Laplace appeoximation is given by $\theta|\mathcal{D} \sim \mathcal{N}(\hat{\theta}, \Sigma)$ ,with $\Sigma^{-1} = J_\mathcal{D}^\top J_\mathcal{D} + \alpha\mathbb{I}$.
+This can also be written as a sample at $t=1$ of a Riemannian diffusion on a manifold with the constant metric, $(\mathbb{R}^D, \mathbf{G})$, where $\mathbf{G} = J_\mathcal{D}^\top J_\mathcal{D} + \alpha\mathbb{I}$. 
+The \textsc{sde} $d\theta = \mathbf{G}^{-\frac{1}{2}} d W$ has a marginal distribution at $t=1$ that exactly match the standard Laplace approximation. 
+Note that this formulation does not rely on the approximation of the \textsc{sde} that disregards the term involving the Christoffel symbols $\Gamma$ as these are zero for constant metrics. \emph{Thus Laplace Diffusion and Laplace Approximation is identical when our model is a linear function.}
+
+
+Second, if we discretize the diffusion with a \emph{single}
+Euler--Maruyama step from $\hat\theta$ in \Cref{eq:em_sde}, we recover the usual Laplace perturbation
+$\theta=\hat\theta+\delta$ with $\delta\sim\mathcal N(0,(\mathrm{GGN}_{\hat\theta}+\alpha I)^{-1})$,
+so sampled Laplace can be viewed as a one-step simulation of Laplace diffusion.
+
+
+% \subsection{Kernel and Image Diffusion}
+% ---------------------------------------------------------------
+% Kernel and Image Diffusion  (drop-in replacement / improvement)
+% ---------------------------------------------------------------
+\subsection{Full, image, and kernel Laplace diffusions}
+\label{subsec:full_image_kernel_diffusions}
+
+The Laplace diffusion as described above uses the full metric $G(\theta)=\mathrm{GGN}_\theta+\alpha \mathbb{I}$.
+To expose the mechanism behind the linearization puzzle and to connect to the kernel/image decomposition from \Cref{chap:setting}, it is useful to define related diffusions that inject noise only along Image (Prediction Changing) and Kernel (prediction-preserving) directions visible (or invisible) to the dataset Jacobian. This would then allow us to decompose the Laplace Diffusion into these two processes and better understand its behaviour. 
+
+
+Recall from \Cref{chap:linalg}, $\textsf{Proj}_H(\theta,\cdot)$ and $\textsf{Proj}_V(\theta,\cdot)$ denote orthogonal projection onto
+$H_\theta$ and $V_\theta$. We can then define three closely related Euler--Maruyama discretizations by controlling \emph{where} noise is injected.
+
+\medskip
+
+\paragraph{Full Laplace diffusion}
+Let $\mathbf{G}(\theta)$ denote the Generalised Gauss-newton as the Riemannian Metric
+A single Euler--Maruyama step can be written as
+\begin{align}
+\label{eq:full_diffusion_em_primitive}
+\theta_{k+1}
+&=
+\theta_k
++
+\sqrt{2h_t}\;\mathbf{G}(\theta_k)^{-\frac{1}{2}}\!\varepsilon_k,
+\qquad
+\varepsilon_k\sim\mathcal N(0,I),
+\end{align}
+
+\paragraph{Image Space diffusion}
+To isolate the effect of perturbations that are restricted to the image subspace and avoid any reparameterization direction we can project the noise onto image subspace onto $H_{\theta_k}$:
+\begin{align}
+\label{eq:image_diffusion_em_primitive}
+\theta_{k+1}
+&=
+\theta_k
++
+\sqrt{2h_k}\;\textsf{Proj}_H\!\Big(\theta_k,\mathbf{G}(\theta_k)^{-\frac{1}{2}}\!\varepsilon_k\Big),
+\qquad
+\varepsilon_k\sim\mathcal N(0,I). \\
+&=
+\theta_k
++
+\sqrt{2 h_k}\;\textsf{LstSq}\!\Big(\tilde{\mathbf{J}}(\theta_k),\ \varepsilon_k, \ \alpha\Big),
+\qquad
+\varepsilon_k\sim\mathcal N(0,I)
+\end{align}
+
+The samples from image space diffusion consists of parameters that generate unique predictions over the training set. Diffusion on this manifold s,amples functions that are necessarily different from the \textsc{map} predictions on the training set. However, the predictive variance in the training set is bounded such that the functional diversity in the predictive samples reflects the intrinsic variance of the training data due to the eigenvalues of $\textrm{GGN}$. 
+
+This is a diffusion that while being reparametrization invariant is numerically tractable. We will study it empirically in larger models and datasets.
+
+\paragraph{Kernel space diffusion}
+To isolate exploration along dataset-preserving directions, we inject noise only in $V_{\theta_k}$ and scale
+it by the prior geometry:
+\begin{align}
+\label{eq:image_diffusion_em_primitive}
+\theta_{k+1}
+&=
+\theta_k
++
+\sqrt{2h_k}\;\textsf{Proj}_H\!\Big(\theta_k,\mathbf{G}(\theta_k)^{-\frac{1}{2}}\!\varepsilon_k\Big),
+\qquad
+\varepsilon_k\sim\mathcal N(0,I). \\
+&=
+\theta_k
++
+\sqrt{2 h_k}\alpha^{-\frac{1}{2}}\; \textsf{Proj}_H\!\Big(\theta_k,\varepsilon_k\Big),
+\qquad
+\varepsilon_k\sim\mathcal N(0,I)
+\end{align}
+
+The samples from the Kernel space diffusion consists of parameters that generate the same function over the training set. The effect of diffusion on this manifold and using the neural network predictive is similar to sampling from the kernel subspace while using the linearized predictive. On the training set the predictive variance is $0$ because it only samples reparametrizations of the \textsc{map} predictions. On out-of-distribution data, the variance is greater than $0$ if at least one of the reparameterizations on the training set is not a global reparameterization. This leads to a clear separation in the predictive variance of in-distribution and out-of-distribution data and further implies that this diffusion distribution never underfits.
+
+
+
+\section{Experiments}\label{sec:experiments}
+\begin{table}
+  \caption{In-distribution performance across methods trained on \textsc{mnist}, \textsc{fmnist} and \smaller[0.80]{CIFAR-10}.}
+  \label{tab:id}
+  %
+  % Make colors look slightly better; taken from:
+  % https://tex.stackexchange.com/questions/11198/coloring-columns-in-a-table-with-colortbl-and-booktabs
+  \setlength{\aboverulesep}{0pt}
+  \setlength{\belowrulesep}{0pt}
+  \setlength{\extrarowheight}{.75ex}
+  %
+  \resizebox{\textwidth}{!}{
+    \rotatebox[origin=c]{90}{MNIST~~~~~}\hspace{3mm}
+    \begin{tabular}{lcccccc}
+    \toprule \rowcolor{gray!30}
+                            & Conf.~($\uparrow$)           & NLL~($\downarrow$)          & Acc.~($\uparrow$)           & Brier~($\downarrow$)        & ECE~($\downarrow$)        & MCE~($\downarrow$) \\
+    \midrule
+    Laplace Diffusion (ours) & \first{0.988\small{±0.001}} & \first{0.042\small{±0.007}} & \first{0.987\small{±0.002}} & \first{0.022\small{±0.003}} & \first{0.137\small{±0.019}} & \first{0.775\small{±0.043}} \\
+    Sampled Laplace          & 0.589\small{±0.008}         & 3.812\small{±0.284}         & 0.146\small{±0.032}         & 1.176\small{±0.046}         & 0.443\small{±0.026}        & 0.985\small{±0.002} \\
+    Linearised Laplace       & 0.968\small{±0.004}         & 0.306\small{±0.041}         & 0.926\small{±0.008}         & 0.117\small{±0.012}         & 0.251\small{±0.034}        & 0.855\small{±0.041} \\
+    %MAP                     & 0.993\small{±0.002}         & 0.045\small{±0.005}         & 0.989\small{±0.001}         & 0.021\small{±0.000}         & 0.190\small{±0.038}        & 0.622\small{±0.134} \\
+    \bottomrule
+  \end{tabular} }
+    %\vspace{8mm}
+    %
+    % FMNIST
+  \resizebox{\textwidth}{!}{
+    \rotatebox[origin=c]{90}{FMNIST}\hspace{3mm}
+    \begin{tabular}{lcccccc}
+    % \toprule \rowcolor{gray!30}
+    %                        & Conf.~($\uparrow$)          & NLL~($\downarrow$)          & Acc.~($\uparrow$)           & Brier~($\downarrow$)        & ECE~($\downarrow$)          & MCE~($\downarrow$) \\
+    % \midrule
+    Laplace Diffusion (ours) & \first{0.900\small{±0.001}} & \first{0.001\small{±0.000}} & \first{0.906\small{±0.007}} & \first{0.141\small{±0.006}} & \first{0.108\small{±0.015}} & \first{0.729\small{±0.092}} \\
+    Sampled Laplace          & 0.618\small{±0.021}         & 4.507\small{±0.000}         & 0.098\small{±0.010}         & 1.295\small{±0.014}         & 0.518\small{±0.013}         & 0.986\small{±0.001} \\
+    Linearised Laplace       & 0.897\small{±0.003}         & 0.423\small{±0.000}         & 0.862\small{±0.005}         & 0.207\small{±0.006}         & 0.147\small{±0.017}         & 0.756\small{±0.048} \\
+    %MAP                     & 0.914\small{±0.000}         & 0.279\small{±0.000}         & 0.904\small{±0.006}         & 0.143\small{±0.004}         & 0.125\small{±0.010}         & 0.609\small{±0.033} \\
+    \bottomrule
+  \end{tabular} }
+    %
+    % CIFAR-10
+  \resizebox{\textwidth}{!}{
+    \rotatebox[origin=c]{90}{CIFAR-10}\hspace{3mm}
+    \begin{tabular}{lcccccc}
+    % \toprule \rowcolor{gray!30}
+    %                        & Conf.~($\uparrow$)          & NLL~($\downarrow$)          & Acc.~($\uparrow$)           & Brier~($\downarrow$)        & ECE~($\downarrow$)          & MCE~($\downarrow$) \\
+    % \midrule
+    Laplace Diffusion (ours) & \first{0.952\small{±0.007}} & \first{0.345\small{±0.062}} & \first{0.905\small{±0.007}} & \first{0.155\small{±0.019}} & 0.259\small{±0.008}         & 0.870\small{±0.021} \\
+    Sampled Laplace          & 0.843\small{±0.004}         & 0.997\small{±0.222}         & 0.717\small{±0.049}         & 0.422\small{±0.081}         & \first{0.221\small{±0.047}} & 0.804\small{±0.080} \\
+    Linearised Laplace       & 0.951\small{±0.007}         & 0.614\small{±0.020}         & 0.863\small{±0.001}         & 0.222\small{±0.002}         & 0.337\small{±0.022}         & \first{0.789\small{±0.035}} \\
+    %MAP                     & 0.960\small{±0.003}         & 0.333\small{±0.030}         & 0.913\small{±0.007}         & 0.143\small{±0.009}         & 0.282\small{±0.002}         & 0.932\small{±0.006} \\
+    \bottomrule
+  \end{tabular} }
+\end{table}
+
+\begin{table}
+  \caption{Out-of-distribution \textsc{auroc}~($\uparrow$) performance for \textsc{mnist}, \textsc{fmnist} and \smaller[0.80]{CIFAR-10}.}
+  \label{tab:ood}
+  %
+  % Make colors look slightly better; taken from:
+  % https://tex.stackexchange.com/questions/11198/coloring-columns-in-a-table-with-colortbl-and-booktabs
+  \setlength{\aboverulesep}{0pt}
+  \setlength{\belowrulesep}{0pt}
+  \setlength{\extrarowheight}{.75ex}
+  %
+% MNIST
+  \resizebox{\textwidth}{!}{
+    \begin{tabular}{lcccccccc}
+    \toprule 
+    \rowcolor{gray!30} Trained on & \multicolumn{3}{c}{\rule[0.9mm]{20mm}{0.1mm} \textsc{mnist} \rule[0.9mm]{20mm}{0.1mm}} & \multicolumn{3}{c}{\rule[0.9mm]{20mm}{0.1mm} \textsc{fmnist} \rule[0.9mm]{20mm}{0.1mm}} & \multicolumn{2}{c}{\rule[0.9mm]{12mm}{0.1mm} \smaller[0.80]{CIFAR-10} \rule[0.9mm]{12mm}{0.1mm}} \\
+    \rowcolor{gray!30} Tested on & \textsc{fmnist} & \textsc{emnist} & \textsc{kmnist} & \textsc{mnist} & \textsc{emnist} & \textsc{kmnist} & \smaller[0.80]{CIFAR-100} & \textsc{svhn} \\
+    \midrule
+    Laplace Diffusion (ours) & \first{0.909\small{±0.033}} & \first{0.625\small{±0.018}} & \first{0.929\small{±0.008}} & \first{0.759\small{±0.045}} & \first{0.741\small{±0.010}} & \first{0.749\small{±0.023}} & \first{0.851\small{±0.002}} & \first{0.862\small{±0.010}} \\
+    Sampled Laplace          & 0.500\small{±0.026}         & 0.494\small{±0.006}         & 0.482\small{±0.013}         & 0.495\small{±0.037}         & 0.503\small{±0.036}         & 0.493\small{±0.033}         & 0.687\small{±0.033}         & 0.599\small{±0.038} \\
+    Linearised Laplace       & 0.758\small{±0.070}         & 0.602\small{±0.027}         & 0.790\small{±0.018}         & 0.625\small{±0.050}         & 0.628\small{±0.013}         & 0.624\small{±0.020}         & 0.837\small{±0.006}         & 0.854\small{±0.024} \\
+    \bottomrule
+  \end{tabular} }
+\end{table}
+
+\renewcommand{\thefootnote}{}
+\footnotetext{Code: {\texttt{https://github.com/h-roy/geometric-laplace}}.}
+\vspace{-3mm}
+
+We benchmark Laplace diffusion with neural network predictive against linearized and sampled Laplace to validate the developed theory. Implementation details are in Appendix~\ref{sec: numerics}. We will show that the diffusion posterior slightly outperforms linearized Laplace in terms of both in-distribution fit and out-of-distribution detection. For completeness, we include comparisons to other baselines such as SWAG, diagonal Laplace, and last-layer Laplace in Appendix~\ref{sec: more baselines}. Laplace diffusion is competitive with the best-performing Bayesian methods despite using the neural network predictive (i.e.\@ no linearization). This contrasts sampled Laplace which severely underfits. 
+This is evidence that the developed theory explains the key challenges of Bayesian deep learning.
+
+\paragraph{Experimental details (appendix~\ref{sec: more baselines}).}
+We train a  44,000-parameter LeNet\citep{lecun1989backpropagation} on \textsc{mnist} and \textsc{fmnist} as well as a 270,000-parameter ResNet\citep{he2016deep} on \textsc{cifar-10}\citep{krizhevsky2009learning}. We sample from the Laplace approximation of the posterior and our Laplace diffusion. For the samples from the Laplace approximation, we consider both the linearized predictive and the neural network predictive, while for diffusion samples, we only consider the neural network predictive. These baselines were chosen to be as similar as possible to our approach to ease the comparison. We use the same prior precision for all methods to ensure a fair comparison. 
+
+\paragraph{In-distribution performance (Table~\ref{tab:id}).}
+We measure the in-distribution performance of different posteriors on a held-out test set.  We report means $\pm$ standard deviations of several metrics: Confidence, Accuracy, Negative Log-Likelihood, Brier Score \citep{VERIFICATIONOFFORECASTSEXPRESSEDINTERMSOFPROBABILITY}, Expected Calibration Error \citep{naeini2015obtaining} and Mean Calibration Error. We observe that Laplace diffusion has the best calibration and fit. We also confirm the underfitting of Sampled Laplace across cases. For \textsc{cifar-10} we had to use a large prior precision to get meaningful samples from sampled Laplace, which explains the less severe underfitting. High prior precision is known to help with underfitting in sampled Laplace, but it also shrinks predictive uncertainty to almost zero. 
+\paragraph{Robustness to dataset shift (Fig.~\ref{fig:rotation_plots}, appendix~\ref{sec:robustness}).}
+We use \textsc{rotated-MNIST}, \textsc{rotated-fmnist}, and \textsc{rotated-cifar} to asses model-calibration and model fit under distribution shift. Fig.~\ref{fig:rotation_plots} plots negative log-likelihood (\textsc{nll}) and expected calibration error (\textsc{ece}) against the degrees of rotation. Laplace diffusion improves on other Laplace approximations.\looseness=-1
+
+\paragraph{Out-of-distribution detection (Table~\ref{tab:ood}).}
+On out-of-distribution data from other benchmarks, we see that Laplace diffusion outperforms the other Laplace approximations.
+
+
+
+
+
+\section{Marginal-Likelihood Optimization}
+\label{sec:marginal_likelihood_optimization}
+Next, we differentiate a function of a matrix on a problem that is native to machine learning: marginal likelihood optimisation of a Bayesian neural network (a high-level introduction is in \Cref{appendix-laplace}).
+
+
+
+\paragraph{Setup: Laplace-approximation of a VAN pre-trained on ImageNet}
+We consider as $g_\theta(x)$ a ``Visual Attention Network'' \citep{guo2023visual} with 4,105,800 parameters, pre-trained on ImageNet \citep{deng2009imagenet}.
+We assume $p(\theta) = N(0, \alpha^{-2}I)$, and Laplace-approximate the log-marginal likelihood of the data as
+\begin{align}\label{equation-marginal-likelihood-laplace}
+\log p(y \mid x) \approx \log p(y, \theta \mid x) - \frac{1}{2} \log\det(A(\alpha)) + \text{const}
+\end{align}
+where $A(\alpha)$ is the generalised Gauss--Newton matrix (GGN) from \Cref{section-introduction} (recall \Cref{equation-gauss-newton-matrix}).
+\begin{wrapfigure}[14]{r}{0.30\linewidth}
+\vspace{-1.0\baselineskip}
+\centering
+\includegraphics[width=\linewidth]{figures/imagenet_callibration.pdf}
+\caption{Lanczos vs diagonal approx. for a Bayesian VAN.}
+\label{figure-training-for-laplace}
+\end{wrapfigure}
+We optimise $\alpha$ via \Cref{equation-marginal-likelihood-laplace}, implementing the log-determinant via stochastic trace estimation in combination with a Lanczos iteration (like in \Cref{section-case-study-gaussian-processes}).
+Contemporary works \citep{daxberger2021bayesian,kristiadi2020being,snoek2015scalable,denker1990transforming,ritter2018scalable,ritter2018online,maddox2020rethinking,sharma2021sketching} rely on sparse approximations of the GGN (such as diagonal or KFAC approximations), so we compare our implementation to a diagonal approximation of the GGN matrix, which yields closed-form log-determinants.
+The exact diagonal of the 4-million-column GGN matrix would require 4 million GGN-vector products with unit vectors, and like \citet{deng2022accelerated}, we find this too expensive and resort to stochastic diagonal approximation (similar to trace estimation; all details are in \Cref{appendix-laplace}).
+We give both the stochastic diagonal approximation and our Lanczos-based estimator exactly 150 matrix-vector products to approximate \cref{equation-marginal-likelihood-laplace}.
+We compare the evolution of the loss function over time and
+ various uncertainty calibration metrics.
+\Cref{figure-training-for-laplace} demonstrates training and \Cref{table-laplace-results} shows results.
+\begin{table}[t]
+\caption{Lanczos outperforms the diagonal approximation for calibrating a Bayesian version of an ImageNet pre-trained VAN.
+One training run; calibration estimated with 30 samples (sampling ``Lanczos'' and ``diagonal'' with another Lanczos/diagonal approximation; see \cref{appendix-laplace}).
+\texttt{places365} \citep{zhou2014learning} is the out-of-distribution data; mean and std.-deviations of 3 runs. ``MVs'': matrix-vector products.
+}
+\label{table-laplace-results}
+\begin{center}
+\small
+\begin{tabular}{lrrrr}
+    \toprule
+    	& 
+    	&  Lanczos (50 MVs) 
+    	&  Lanczos (150 MVs) 
+    	& Diagonal (150 MVs)
+    	\\
+    \midrule
+    Runtime (sec)
+    	& $\downarrow$
+    	& \cellcolor[gray]{0.9}\bf 950
+    	& 4674
+    	& 4314 
+    	\\
+    Marginal likelihood (log)
+    	& $\uparrow$
+    	& -192,757
+    	&  \cellcolor[gray]{0.9} \bf -154,475
+    	& -876,444 
+    	\\
+	\midrule
+    Joint likelihood: train (log)
+    	& $\uparrow$
+    	& \cellcolor[gray]{0.9}\bf -81.2 $\pm$ 15.4 
+    	&  \cellcolor[gray]{0.9}\bf  -81.2 $\pm$ 15.4 
+    	& -5,669.2 $\pm$ 124.1 
+    	\\
+    Joint likelihood: test (log)
+    	& $\uparrow$
+    	& \cellcolor[gray]{0.9}\bf -66.5 $\pm$ 11.2 
+    	& \cellcolor[gray]{0.9}\bf  -66.5 $\pm$ 11.2 
+    	& -5,260.9 $\pm$ 290.2 
+    	\\
+    Expected calibration error
+    	& $\downarrow$
+    	& 0.5  $\pm$ 0.01
+    	& 0.5  $\pm$ 0.01
+    	& \cellcolor[gray]{0.9}\bf 0.2 $\pm$ 0.003 
+    	\\
+    AUROC (out-of-dist.)
+    	& $\uparrow$
+    	&\cellcolor[gray]{0.9}{\bf 0.9  $\pm$ 0.03}
+    	& \cellcolor[gray]{0.9}{\bf  0.9  $\pm$ 0.03}
+    	& 0.5 $\pm$ 0.010
+    	\\
+    \bottomrule
+\end{tabular}
+\end{center}
+\end{table}
+
+\textbf{Analysis: Lanczos uses matrix-vector products better (by a margin) }
+The results suggest how, for a fixed matrix-vector-product budget, Lanczos achieves a drastically better likelihood at a similar computational budget and already shows significant improvement with a much smaller budget. 
+Lanczos outperforms the diagonal approximation on all metrics except ECE.
+The subpar performance of the diagonal approximation matches the observations of \citet{ritter2018scalable}; see also \citep{daxberger2021laplace}. 
+The main takeaway from this study is that differentiable matrix-free linear algebra unlocks new techniques for Laplace approximations and allows further advances for Bayesian neural networks in general.
+
+
+==

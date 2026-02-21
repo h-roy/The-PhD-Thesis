@@ -1,0 +1,804 @@
+% =====================================================================
+% Chapter 5: Laplace Approximation  (rewrite of chapter introduction)
+% =====================================================================
+
+\chapter{Laplace Approximation: Null Space Posterior}
+\label{ch:laplace_null}
+
+\begin{keypointsbox}
+\textbf{Key points (Chapter~\thechapter).}
+\begin{enumerate}
+
+    \item \textbf{Two remedies with geometric meaning.}
+    We develop (i) \emph{Laplace diffusion}, which turns a local metric into a sampling procedure that is
+    stable to reparameterizations, and (ii) a \emph{null-space (projected) posterior} whose covariance is
+    supported on dataset-preserving directions, preventing training-set underfitting by construction.
+
+\end{enumerate}
+\end{keypointsbox}
+
+\begin{center}
+\begin{minipage}{0.95\linewidth}
+\noindent\textbf{Chapter \thechapter\ -- Geometric Computations via Matrix-Free Linear Algebra:}\par\vspace{3pt}
+
+\begin{tabular}{@{}p{0.83\linewidth}r@{}}
+\hyperref[sec:bridge_dg_la]{\thechapter.1\;\;From Geometry to Linear Algebra} \dotfill & \pageref{sec:bridge_dg_la}\\
+\hyperref[sec:la_computations]{\thechapter.2\;\;Efficient Linear Algebra for Deep Learning} \dotfill & \pageref{sec:la_computations}\\
+\end{tabular}
+\end{minipage}
+\end{center}
+
+So far we have studied the geometry of the parameter space in Bayesian Deep Learning in \cref{chap:setting}. We have also seen practical algorithms for making computations in the parameter space equipped with this geometry \cref{chap:linalg}. In this chapter we will apply this framework to a standard Approximate Bayesian Inference method, specifically the Laplace Approximation. We will explain why Laplace Approximation fails in the Bayesian Deep learning setting and propose several methods that addresses this failure mode.
+
+\section{Null-Space Posterior}
+\label{sec:nullspace_posterior}
+We next propose a fully correlated Gaussian posterior that is guaranteed to not underfit. Unless otherwise stated, the presented results are novel contributions and proofs of all theorems can be found in the appendix.
+
+%Training large models is computationally expensive and relying on pre-trained models is becoming increasingly common. In a similar spirit, Bayesian approximations are increasingly becoming \emph{post hoc}, such that the posterior is approximated with a normal distribution centered on a pre-trained mean, i.e. $p(\btheta | \mathcal{D}) \approx \N(\btheta | \btheta_{\textsc{map}}, \bSigma)$. The question then becomes how to choose a suitable covariance $\bSigma$.
+
+As alluded to, we propose restricting the posterior covariance to a particular subspace of the parameter space. Letting $\U \in \R^{P \times R}$ denote an orthogonal basis of this subspace, we consider an \emph{isotropic} model therein,
+\begin{equation}
+    q_{\textnormal{\textsc{proj}}}(\btheta | \btheta_{\textsc{map}}, \mathcal{D})
+    =
+    \mathcal{N}\left(\btheta | \btheta_{\textsc{map}}, \alpha^{-1}\U\U\T \right).
+    \label{eq:approx_post}
+\end{equation} 
+Specifically, we choose the above subspace as the \emph{kernel} (i.e.\@ \emph{null space}) of the \textsc{ggn} matrix and call the result the \emph{projected posterior}. Formally,
+\begin{align}
+  \U\U\T = \mathbb{I}_P - \mathcal{P}(\textsc{ggn}) = \mathbb{I}_P - \mat{V} \ [\mat{D} \!>\! 0] \ \mat{V}\T,
+\end{align}
+where $\mat{V}\mat{D}\mat{V}\T$ is an eigen decomposition of the \textsc{ggn} matrix and $[\mat{D} \!>\! 0] \in \R^{P \times P}$ is diagonal with elements 1 where $\mat{D}$ holds positive values. We use the shorthand notation $\mathcal{P}(\textsc{ggn})$ to denote the projection onto the image of the \textsc{ggn}.
+\emph{We next justify the projected posterior through the lens of underfitting.}
+
+% \begin{wrapfigure}[8]{r}{0.3\textwidth}
+%   \vspace{-10mm}
+%   \includegraphics[width=\linewidth]{figures/interpolation.pdf}
+%   \caption{\emph{Not} underfitting implies interpolation.}
+%   \label{fig:interpolation}
+% \end{wrapfigure}
+%
+\paragraph{The projected posterior never underfits.}
+% Here we should provide a careful analysis of why underfitting happens. This should include a discussion of kernels, and should motivate restriction the posterior to the kernel, i.e. we should probably have some observation-noise-goes-to-zero analysis where the posterior collapses to the kernel (this is the case, right?)
+%
+% Underfitting in Bayesian deep learning is seen when the Bayesian prediction deviates from the \textsc{map} prediction \emph{on the training data}, i.e.
+% \begin{align}
+%   %\hspace{-2cm}\text{Bayesian underfitting:}\qquad\qquad
+%   \mathbb{E}_{\btheta \sim q} \left[f(\btheta, \x)\right] \neq f(\btheta_{\textsc{map}}, \x)
+%   \qquad
+%   \text{for } \x \in \mathcal{D}.
+% \end{align}
+% %
+% Obviously, this notion of underfitting only applies to low-noise data such as images. In this case, samples from the posterior will interpolate the training data. % (Fig.~\ref{fig:interpolation}).
+%
+When using the linearized neural network, $f_{\text{lin}}^{\btheta_{\textsc{map}}}(\btheta, \x) = f(\btheta_{\textsc{map}}, \x) + \J_{\btheta_{\textsc{map}}}(\x)(\btheta - \btheta_{\textsc{map}})$, we avoid underfitting when $\J_{\btheta_{\textsc{map}}}(\x)(\btheta - \btheta_{\textsc{map}}) = \vec{0}$ on the training data. The linearized model then avoids underfitting when $\btheta - \btheta_{\textsc{map}}$ is restricted to the kernel (null space) of $\J_{\btheta_{\textsc{map}}} = [\J_{\btheta_{\textsc{map}}}(\x_1); \ldots; \J_{\btheta_{\textsc{map}}}(\x_N)]$. For the proposed projected posterior \eqref{eq:approx_post}, we, thus, choose $\U$ as an orthonormal basis of the Jacobian kernel and note that this kernel coincides with the zero eigenvectors of the \textsc{ggn}. \looseness=-1
+
+These considerations can be formalized as follows.
+\begin{lemma}
+\label{lemma:3.1}
+    The projected posterior \eqref{eq:approx_post} is supported on equal functions on the training data, i.e.\@ $\forall \x \in \mathcal{D}$
+    \begin{align}
+        &f_{\textnormal{lin}}^{\btheta_{\MAP}}(\btheta, \x) = f(\btheta_{\MAP}, \x)
+        %\quad\textnormal{ for any }\btheta \sim q \textnormal{ and for any }\x \in \{\x_1,\ldots,\x_N\}
+        &\forall \btheta \sim q_{\textnormal{\textsc{proj}}},
+    \end{align}
+    %\intertext{which implies that}
+    which implies that~~$\textnormal{\textsc{Var}}_{\btheta \sim q_{\textnormal{\textsc{proj}}}} f_{\textnormal{lin}}^{\btheta_{\MAP}}(\btheta, \x) = 0$.
+    %\begin{align}
+    % \label{eq:variance_zero_trainset}
+    %     &\textnormal{\textsc{Var}}_{\btheta \sim q_{\textnormal{\textsc{proj}}}} f_{\textnormal{lin}}^{\btheta_{\MAP}}(\btheta, \x) = 0.
+    %    %\quad\textnormal{ for any }\x \in \{\x_1,\ldots,\x_N\}.
+    %    & %&\forall \x \in \mathcal{D}.
+    %\end{align}
+\end{lemma}
+We emphasize that the statement \emph{only holds on the training data}. Elsewhere, the approximate posterior yields strictly positive variances with high probability under strong but reasonable assumptions.
+% \begin{restatable}{lemma}{PositiveVarianceLemma}
+% \label{lemma: 3.2}
+%     Let $\x_{test}$ be a test point. If the square matrix $\begin{pmatrix}
+%         \J_{\btheta_{\textsc{map}}} \\ \J_{\btheta_{\textsc{map}}}(\x_{test})
+%     \end{pmatrix} \begin{pmatrix}
+%         \J_{\btheta_{\textsc{map}}} \\  \J_{\btheta_{\textsc{map}}}(\x_{test})
+%     \end{pmatrix}^\top$
+%     of size $(NO+O) \times (NO+O)$ has rank at least $NO+1$, then
+%     \begin{equation}
+%     \label{eq:variance_nonzero_nontrainset}
+%         \textnormal{\textsc{Var}}_{\btheta \sim q} f_{\textnormal{lin}}^{\btheta_{\MAP}}(\btheta, \x_{test}) > 0 .
+%     \end{equation}
+% ~\end{restatable}
+% \marco{Uhmm also alternative (more general) formulation. I think it's better. Thoughts?}
+% \hrittik{I like this better also!}
+\begin{restatable}{lemma}{PositiveVarianceLemma}
+%\begin{lemma}
+  \label{lm:variance_nonzero_nontrainset}
+    %Let $\x_{test}$ be a datapoint 
+    Let \mbox{$\J_{\btheta} \!=\! [\J_{\btheta}(\x_1)\T \ldots \J_{\btheta}(\x_N)\T]\T$ and} $\x_{\textnormal{test}} \in \R^I$, then
+    \begin{equation}
+    \label{eq:variance_nonzero_nontrainset}
+        \textnormal{\textsc{Var}}_{\btheta \sim q_{\textnormal{\textsc{proj}}}} f_{\textnormal{lin}}^{\btheta_{\MAP}}(\btheta, \x_{\textnormal{test}}) > 0
+    \end{equation}
+    if
+    \resizebox{0.95\linewidth}{!}{$\textnormal{\textsc{Rank}}\!\left(\begin{smallpmatrix}
+        \J_{\btheta_{\textsc{map}}} \\ \J_{\btheta_{\textsc{map}}}(\x_{\textnormal{test}})
+    \end{smallpmatrix} \begin{smallpmatrix}
+        \J_{\btheta_{\textsc{map}}} \\  \J_{\btheta_{\textsc{map}}}(\x_{\textnormal{test}})
+    \end{smallpmatrix}\T\right)
+    >
+    \textnormal{\textsc{Rank}}\left(\J_{\btheta_{\textsc{map}}} \J_{\btheta_{\textsc{map}}}\T\right)$.} 
+%\end{lemma}
+\end{restatable}
+%
+Jointly the two lemmas show that out-of-distribution data is guaranteed to have higher predictive variance than the training data. The (technical) rank assumption in Lemma~\ref{lm:variance_nonzero_nontrainset} is known to be satisfied with high probability under reasonable assumptions \citep{bombari2022memorization, nguyen2021tight, karhadkar2024bounds}. \looseness=-1
+
+These results can be contrasted with \textsc{lla}, where we can show the following result.
+%Intuitively, the predictive variance of the Laplace approximation with the linearized predictive is bounded in-distribution because i) Component of the distribution in the null-space of the $\textsc{ggn}$ disappears due to also residing in the jacobian in the linearized predictive ii) After convergence the non-zero eigenvalues of the \textsc{ggn} are large, and hence their contribution to variance is also small. 
+%
+\begin{restatable}{theorem}{UpperBoundLinearizedLaplace}
+\label{thm:upper_bound_lla}
+    For $\alpha>0$, the predictive variance of \textsc{lla} on any training datapoint is positive and bounded, 
+    \begin{equation*}
+        \frac{O \gamma^2}{\gamma^2 + \alpha}
+        \leq
+        \textnormal{\textsc{Var}}_{\theta\sim q_{\textnormal{\textsc{lla}}}} f_{\textnormal{lin}}^{\btheta_{\MAP}}(\btheta, \x) 
+        \leq 
+        \frac{O \lambda^2}{\lambda^2 + \alpha} %< O
+        \quad \text{for } \x \in \mathcal{D}.
+    \end{equation*}
+    Here, $\lambda$ and $\gamma$ are the largest and smallest singular values of the dataset Jacobian $\J_{\btheta_{\textsc{map}}}$, respectively.
+\end{restatable}
+%Proof in \cref{sec:proof_upper_bound_lla}.
+Here, $\gamma$ is strictly positive with high probability under reasonable assumption \citep{bombari2022memorization, nguyen2021tight, karhadkar2024bounds}. \emph{\textsc{lla} then underfits with high probability, which contrasts our approach (c.f.\@ Lemma~\ref{lemma:3.1})}.
+Note that this is only true for the (intractable) \textsc{ggn}-based covariance. We expect that sparse approximations to this covariance, e.g.\@ diagonal and \textsc{kfac}, has even higher training set variance.
+
+
+% %Proof in \cref{sec:proof_lemma_positive_variance}.\\
+% Note, for example, that the rank assumption does \emph{not} hold if $\x_{\textnormal{test}}\in \{\x_1,\ldots,\x_N\}$. Nonetheless it is not an unreasonable assumption. Such square matrix, known as Empirical Neural Tangent Kernel, is well studied in literature. Under some (always very restrictive) sets of assumptions on model, overparametrization, dataset and optimization, a variety of positive lower bounds of the smallest eigenvalue has been proved to hold with high probability \citep{bombari2022memorization, nguyen2021tight, karhadkar2024bounds}. Such lower bound directly implies that the NTK is full rank and our Lemma hypothesis is satisfied.
+
+% Note how lemmas \ref{lemma:3.1} and \ref{lm:variance_nonzero_nontrainset} together set a nice foundation for a meaningful OoD score.
+
+\paragraph{Underfitting in existing models.}
+The above analysis justifies the projected posterior and also sheds light on why current Bayesian approximations often underfit. For efficiency, mean field approximations of the posterior covariance are quite common, e.g.\@ \emph{diagonal} or \emph{Kronecker factored} covariances \citep{ritter2018scalable, martens2015optimizing}. These approximations will generally sample outside the \textsc{ggn} kernel, implying strictly positive predictive variances on the training data even for noise-free data. This reasoning also motivates recent works that have attempted to improve these approximations by making their spectrum more aligned with the spectrum of the \textsc{ggn} \citep{george2018fast, dhahri2024shaving}. 
+
+% \hrittik{Proposed restatement of this sentence: These approximations are generally \emph{full rank} 
+%  with different eigenvectors and eigenvalues. So they will sample from both the kernel and image of the \textsc{ggn}...(something that briefly explains why this will underfit)}
+%  \marco{I really like this! Also nicely expand on the "approximations to the posterior are axis-aligned" which we have in the introduction (which I also really like). But, just to be pedantic, diagonal is full-rank but KFAC is not. For MLPs it has rank equal twice the number of neurons. (for convolutions it's \emph{probably} full rank)}
+ 
+ % \hauberg{Cite some eigen-corrected KFAC thingy paper.}
+
+
+\paragraph{Computational benefits.}
+Beyond the above theoretical motivations, our projected covariance also brings computational benefits. Since $\U$ is an orthonormal basis, the covariance $\U\U\T$ is a projection matrix, implying that its eigenvalues are all 0 or 1. This, in turn, implies that $\U\U\T = (\U\U\T)^2 = (\U\U\T)\T = (\U\U\T)^{\dagger}$, where $^{\dagger}$ denotes pseudo-inversion. Drawing samples from $q$, thus, only requires matrix-vector products with $\U\U\T$ and the matrix need not be instantiated.
+The only open question is then how to efficiently perform such matrix-vector products. We answer this in Sec.~\ref{sec:algorithm}.
+
+Since all eigenvalues of $\U\U\T$ are 0 or 1, we can a priori expect the matrix to yield numerically stable computations even at moderate numerical precision. This is in contrast to the \textsc{ggn}, which easily has condition numbers that exceed $10^6$ \citep{miani:sketching:2024}.
+
+\paragraph{Tractable model selection.}
+\label{sec:3.3}
+%
+A benefit of Bayesian neural networks is that we can choose $\alpha$ by maximizing the marginal likelihood, $p(\mathcal{D}|\alpha)$, on the training data, i.e.\@ without relying on validation data \citep{mackay1995probable}. However, since the marginal likelihood of the true posterior is intractable, it is common to consider that of the Laplace approximation \citep{immer2021scalable} %\looseness=-1
+\begin{align}
+\label{eq: lml}
+\begin{split}
+    \log \, q_{\textsc{lla}}(\mathcal{D}|\alpha) 
+      &= % \log \, p(\mathcal{D}|\mathcal{M}) \\
+      %&=
+      \log\,p(\mathcal{D}|\btheta_{\MAP}) + \log\, p(\btheta_{\MAP}|\alpha)  \\
+      &- \frac{1}{2} \log\det\left( \frac{1}{2\pi}\left(\textsc{ggn} + \alpha \mathbb{I}\right) \right).
+\end{split}
+\end{align}
+This can then be optimized numerically to estimate $\alpha$. In contrast, the projective posterior \eqref{eq:approx_post} does not require optimization as $\alpha$ is available in closed form.
+%
+\begin{lemma}
+    The marginal likelihood for the projected posterior \eqref{eq:approx_post} has a globally optimal $\alpha$ given by
+    \begin{equation}\label{eq:opt_alpha}
+        \alpha^* = \frac{\norm{\btheta_{\MAP}}^2}{P - \trace(\mathbb{I}_P - \mathcal{P}\left(\textnormal{\textsc{ggn}}_{\btheta_{\MAP}}\right))}.
+    \end{equation}
+\end{lemma}
+%
+In practice, the trace can be approximated using \citeauthor{hutchinson1989stochastic}'s estimator [\citeyear{hutchinson1989stochastic}].
+% Given access to efficient projection vector products, the trace can be approximated using the Hutchinson estimator. Furthermore, it can be shown that the optimal prior precision is analytically tractable only when the covariance has no more than 4 unique eigenvalues. Hence, in vast majority of cases finding the optimal prior precision requires expensive optimization. 
+ 
+% as a further benefit its marginal likelihood is also tractable. if we can do Pv we can obtain optimal alpha without any optimization. Only tractable when we have less than 5 unique eigenvalues. 
+
+
+
+
+\paragraph{Links to {\scriptsize LLA}.}
+% Intuitively, the predictive variance of the Laplace approximation with the linearized predictive is bounded in-distribution because i) Component of the distribution in the null-space of the $\textsc{ggn}$ disappears due to also residing in the jacobian in the linearized predictive ii) After convergence the non-zero eigenvalues of the \textsc{ggn} are large, and hence their contribution to variance is also small. 
+% %
+% \begin{restatable}{theorem}{UpperBoundLinearizedLaplace}
+% \label{thm:upper_bound_lla}
+%     For $\alpha>0$, the predictive variance of \textsc{lla} on any training datapoint is positive and bounded, 
+%     \begin{equation*}
+%         \frac{O \gamma^2}{\gamma^2 + \alpha}
+%         \leq
+%         \textnormal{\textsc{Var}}_{\theta\sim q_{\textnormal{\textsc{lla}}}} f_{\textnormal{lin}}^{\btheta_{\MAP}}(\btheta, \x) 
+%         \leq 
+%         \frac{O \lambda^2}{\lambda^2 + \alpha} %< O
+%         \quad \text{for } \x \in \mathcal{D}.
+%     \end{equation*}
+%     Here, $\lambda$ and $\gamma$ are the largest and smallest singular values of the dataset Jacobian $\J_{\btheta}$, respectively.
+% \end{restatable}
+% %Proof in \cref{sec:proof_upper_bound_lla}.
+% Note that $\gamma$ is known to be strictly positive with high probability under reasonable assumption \citep{some_ntk_paper}. \textsc{lla} then underfits with high probability, which contrasts our approach (c.f.\@ Lemma~\ref{lemma:3.1}).
+% Note that this holds true only of the fully-correlated (intractable) covariance, not for e.g. diagonal or KFAC approximation.
+%
+% Note that the covariance of LLA can be decomposed as the sum of two positive definite terms, one of which is our projected covariance
+% \begin{equation}
+%     (\alpha \mathbb{I}_p + \textsc{ggn})^{-1}
+%     =
+%     \Sigma_{im}
+%     +
+%     \alpha^{-1}(\mathbb{I}_p - \mathcal{P}\left(\textsc{ggn}_{\btheta_{\textsc{map}}}\right)
+% \end{equation}
+% and the same decomposition applies to the predictive variance
+% \begin{equation}
+%     \textnormal{\textsc{Var}}_{\theta\sim q_{\textnormal{\textsc{lla}}}} f_{\text{lin}}
+%     =
+%     \textnormal{\textsc{Var}}_{\theta\sim \mathcal{N}(\btheta_{\MAP}, \Sigma_{im})} f_{\textnormal{lin}} 
+%     + 
+%     \textnormal{\textsc{Var}}_{\theta\sim q_{\textnormal{\textsc{proj}}}} f_{\text{lin}}
+% \end{equation}
+%
+%Furthermore, the approximation error of this posterior can be bounded.
+The projected posterior can be viewed as a fully correlated tractable approximation to the \textsc{lla}. The following statement shows that the difference between the two approximate posteriors is bounded.
+%
+\begin{lemma}\label{lm:error_bound}
+   Let $\tau$ denote the smallest non-zero eigenvalue of the \textnormal{\textsc{ggn}}\citep{nguyen2021tight}, then
+\begin{equation*}
+    \Big\|
+    \underbrace{(\alpha \mathbb{I}_P + \textnormal{\textsc{ggn}})^{-1}}_{\textnormal{\textsc{lla} cov}} 
+    -
+    \underbrace{\alpha^{-1}(\mathbb{I}_P - \mathcal{P}\left(\textnormal{\textsc{ggn}}_{\btheta_{\textsc{map}}}\right)}_{\textnormal{Proj cov (scaled)}}
+    \Big\| \leq \frac{1}{\tau + \alpha}
+\end{equation*}
+%
+Additionally, let $k$ denote the \textnormal{\textsc{ggn}} rank and $d$ the $W_2$ Wasserstein distance, then $d^2(q_{\textnormal{\textsc{lla}}}, q_{\textnormal{\textsc{proj}}}) \leq (\tau + \alpha)^{-1} k$.
+%
+% \begin{equation}
+% \label{eq:w2_bound}
+%     d^2(q_{\textnormal{\textsc{lla}}}, q_{\textnormal{\textsc{proj}}}) \leq (\tau + \alpha)^{-1} k. %\frac{1}{\tau + \alpha} k.
+% \end{equation}
+
+\end{lemma}
+
+\subsection{Scaling to high-dimensional outputs} % {Loss Kernel Projection}
+The computational complexity of the projection algorithm scales superlinearly with the model's output size. For many tasks this is unproblematic, but it renders the method inapplicable to e.g.\@ image-generative models.
+%\emph{In principle}, we can avoid this superlinear scaling by applying finer row-partitions of the per-datum Jacobians, up to the extreme case of alternating projections over individual rows. This approach regain the $\mathcal{O}(P)$ memory complexity, irrespective on output size, but boost the time complexity by an extra factor $O$, which gets unfeasible for e.g.\@ image-generative models.
+
+To handle high-dimensional outputs, we propose removing the requirement of preserving the predictions of $\btheta_{\MAP}$ at the training data. Instead, we propose to (locally) preserve the \emph{loss} at each training point.
+%
+%Let $l(\hat{\vec{f}}, \y) = \log\,p(\y|SOMETHING) + \log\, p(\btheta_{\MAP}|\alpha)$ denote the loss of a single observation. Where the projected posterior \eqref{eq:approx_post} is restricted to the kernel of $f_{\text{lin}}^{\btheta}$, we can instead preserve the loss by restricting to the kernel of $l \circ f_{\text{lin}}^{\btheta}$.
+%
+%As we saw, for settings where the Jacobian has too many rows, the previously proposed method can be slow. One possible approach is to consider a different matrix that satisfied two properties: has less rows and preserves some kernel properties.
+%
+This is achieved by considering the loss-Jacobian, i.e.\@ the stacking of the per-datum loss-gradients. 
+%\begin{equation}
+%    \J^L_{\btheta} = [\nabla_{\btheta}l(f(\btheta,\x_1),\y_1); \ldots; \nabla_{\btheta}l(f(\btheta,\x_N),\y_N)] \in \R^{N \times P}
+%\end{equation}
+\begin{equation}
+    \J^L_{\btheta} = \begin{pmatrix}
+        \nabla_{\btheta}l(f(\btheta,\x_1),\y_1) \\
+        \vdots \\
+        \nabla_{\btheta}l(f(\btheta,\x_N),\y_N)
+    \end{pmatrix}
+    \in \R^{N \times P}
+\end{equation}
+\begin{lemma}
+    The kernel of the stacked loss gradients $\J^L_{\btheta} \in \R^{N \times P}$ contains the kernel of the full Jacobian $\J_{\btheta} \in \R^{NO \times P}$, i.e.\@ $\mathrm{ker}(\J_{\btheta}) \subseteq \mathrm{ker}(\J^L_{\btheta})$.
+    %Additionally, note that when the output dimension is $1$, these subspaces are identical. 
+    Further, note that these subspaces are identical for $O=1$.
+\end{lemma}
+% Intuitively, for each datapoint, the gradient is a linear combination of its Jacobian rows, namely $\nabla_{\btheta}l(f(\btheta,\x),\y) = \J_{\btheta}(\x)\T \cdot \nabla_{f(\btheta,\x)}l(f(\btheta,\x),\y)$. This approach can, thus, be seen as aggregating each per-datum Jacobian into a single meaningful row, lowering the row count by a factor $O$.
+
+Intuitively, for each datapoint, the gradient is a linear combination of its Jacobian rows, namely $\nabla_{\btheta}l(f(\btheta,\x),\y) =\nabla_{f(\btheta,\x)}l(f(\btheta,\x),\y)  \J_{\btheta}(\x)$. This approach can, thus, be seen as aggregating each per-datum Jacobian into a single meaningful row, lowering the row count by a factor $O$.
+
+
+We propose the \emph{loss-projected approximate posterior}
+\begin{equation}
+    q_{\textnormal{\textsc{loss}}}(\btheta | \btheta_{\textsc{map}}, \mathcal{D})
+    =
+    \mathcal{N}\left(\btheta_{\textsc{map}}, \alpha^{-1}\U_L\U_L\T \right),
+    \label{eq:approx_post_loss}
+\end{equation} 
+where $\U_L \in \R^{P \times R}$ denotes an orthogonal basis of the kernel of $\J^L_{\btheta}$. Samples from this approximate posterior are guaranteed to have the same per-datum loss as the mode parameter, up to first order,
+%
+%\marco{This holds the same for both linearized and non-linearized $f$ because the error is kinda of the same order. I stated the theorem with the non-linearized $f$ because it's more compact, but both options are possible.}
+\begin{restatable}{lemma}{BoundedLossKernelError}
+%\begin{lemma}
+  \label{lm:loss_proj_err}
+     %For example: in a regression task the $\ell_2$ norm distance from ground truth will be preserved; in a classification task the predicted probability of the ground truth class will be preserved,
+    For any $\theta\sim q_{\textnormal{\textsc{loss}}}$ and $\x_n \in \mathcal{D}$ it holds
+    \begin{align*}
+        |l(f(\btheta, \x_n), \y_n) 
+        \!-\!
+        l(f(\btheta_{\MAP}, \x_n), \y_n)|
+        %\quad\textnormal{ for any }\theta\sim q^L \textnormal{ and for any }n \in \{1,\ldots,N\}
+        %\quad\forall\theta\sim q^L, \x_n \in \mathcal{D}.
+        = \mathcal{O}(\lVert \btheta \!-\! \btheta_{\MAP} \rVert^2)
+    \end{align*}
+    %where the $\mathcal{O}$ constant depends only on $\lambda_{\x_n}$ the largest eigenvalue of the single-data \textsc{ggn}, given by $\J_{\btheta_{\textsc{map}}}(\x_n)\T \mat{H}_{\btheta_{\textsc{map}}} (\x_n)\J_{\btheta_{\textsc{map}}}(\x_n)$. \marco{we can remove this $\lambda_{\x_n}$ and just absorb it in the constant, maybe it's clearer.}
+    which implies that
+    \begin{equation}
+        \textnormal{\textsc{Var}}_{\btheta \sim q_{\textnormal{\textsc{loss}}}} l(f(\btheta, \x_n), \y_n)
+        \leq
+        \mathcal{O}(\alpha^2) .
+        %\alpha^4\lambda_{\x_n}^2.
+    \end{equation}
+    %\marco{"small enough" here is required to kill the higher order terms and have an actual bound. Alternatively we can write the bound as $\leq \mathcal{O}(\alpha^4)$}
+%\end{lemma}
+\end{restatable}
+In particular, these results hold regardless of whether we use the linearized model $f_{\textnormal{lin}}^{\btheta_{\MAP}}$ or the standard one $f$.\looseness=-1
+%\hrittik{I think this theorem as stated is not true. It should be $(l \circ f)_{\text{lin}}^{\btheta_{\MAP}}(\btheta, \x_n), \y_n) = l(f(\btheta_{\MAP}, \x_n), \y_n) $ But I think it would be instructive to write it as $l(f(\btheta, \x_n), \y_n) + O(\lVert \btheta - \btheta_{\MAP} \rVert^2) = l(f(\btheta_{\MAP}, \x_n), \y_n) $}
+
+\paragraph{Complexity.} The space complexity of the algorithm is $\mathcal{O}(P + NS)$ and the time complexity is $\mathcal{O}(t_{\max}PN + N S^2)$. 
+
+\section{Experiments}\label{sec:results}
+We benchmark our \emph{projected} and \emph{loss-projected} posteriors against popular post-hoc Bayesian methods, including \textsc{swag}, and diagonal and last-layer Laplace. We also include the prediction \textsc{map}.
+%Both projection methods are competitive with the baselines.
+Baseline prior precisions are tuned via grid search, while projection posteriors use the optimal prior precision \eqref{eq:opt_alpha}. Details on models and hyperparameters are in Appendix C.
+% ~\ref{appdx: expt_details}.
+
+\subsection{Toy regression}
+% \begin{tcolorbox}[colback=blue!5!white,colframe=blue!75!black]
+%   $\bm{Claim:}$ Projected Laplace captures in-between uncertainties, unlike sparsely correlated Laplace.
+% \end{tcolorbox}
+% In this experiment, we assess the ability of different Laplace approximations to capture predictive uncertainty in a toy regression task. Prior work \citep{foong2019between} highlights that Bayesian neural networks with mean-field variational inference (MFVI) fail to capture in-between uncertainties, leading to poor uncertainty quantification between observed data points.
+
+% We observe a similar phenomenon with sparsely correlated Laplace approximations, which do not capture these uncertainties effectively. As shown in Figure 4, the Diagonal Laplace approach fails to model uncertainty between data points, producing overconfident predictions. In contrast, both the Kernel Projection and Loss Kernel Projection methods retain correlations between parameters, resulting in better uncertainty estimates for unseen regions.
+
+% These results indicate that maintaining full parameter correlations is crucial for accurate uncertainty modeling, particularly in tasks where in-between uncertainties are important.
+
+
+\begin{figure}[t]
+  \centering
+  % \includegraphics[width=\linewidth]{figures/in_between_uncertainty2.pdf}
+  \includegraphics[width=\linewidth]{figures/in_between_uncertainty3.pdf}
+  \vspace{-8mm}
+  \caption{The sparse approximations of the posterior fail to capture in-between uncertainty whereas fully correlated posteriors can capture them.}
+  \label{fig:inbetween}
+\end{figure}
+
+% \fbox{
+% $\bm{Claim:}$ Projected Laplace captures in-between uncertainties better than sparsely correlated Laplace.}
+
+\begin{mdframed}[backgroundcolor=myblue, linecolor=blue!75!black]
+\textbf{Hypothesis:} The projected posterior captures in-between uncertainties better than sparsely correlated Laplace.
+\end{mdframed}
+%
+We first assess different Laplace approximations in a toy regression task. \citet{foong2019between} shows that Bayesian neural networks with mean-field variational inference fail to capture in-between uncertainties. %, leading to poor uncertainty estimates between data points.
+%
+We observe a similar issue with sparsely correlated Laplace approximations (Fig.~\ref{fig:inbetween}). In contrast, the projected posterior correlates all parameters, improving predictive uncertainty estimates for unseen regions. \emph{This illustrates that maintaining full parameter correlations is essential for accurate in-between uncertainties.}
+
+
+\subsection{Predictive uncertainties on standard image classification}
+
+% \begin{tcolorbox}[colback=blue!5!white,colframe=blue!75!black]
+%   $\bm{Claim:} $ Projected Laplace approximations produce competitive or superior predictive uncertainties across tasks, including in-distribution calibration, robustness to distribution shifts, and out-of-distribution detection.
+% \end{tcolorbox}
+
+\begin{mdframed}[backgroundcolor=myblue, linecolor=blue!75!black]
+\textbf{Hypothesis:} The projected posterior provide competitive or superior predictive uncertainties across tasks, including in-distribution calibration, robustness to distribution shifts, and out-of-distribution detection.
+\end{mdframed}
+
+
+\paragraph{In-distribution performance (Table~\ref{tab:id}).}
+%
+We next consider standard image classification tasks. We train a LeNet \citep{lecun1989backpropagation} on MNIST and Fashion MNIST, and a ResNet \citep{he2016deep} on CIFAR-10 \citep{krizhevsky2009learning} and SVHN \citep{netzer2011reading}. Keeping the \textsc{map} fixed we assess the predictive posterior of all methods using metrics such as confidence, accuracy, negative log-likelihood (NLL), Brier score \citep{VERIFICATIONOFFORECASTSEXPRESSEDINTERMSOFPROBABILITY}, expected calibration error (ECE), and maximum calibration error (MCE) \citep{naeini2015obtaining}.\looseness=-1
+
+As shown in Table~\ref{tab:id}, the projected posterior matches the \textsc{map} in-distribution, as expected from Lemma~\ref{lemma:3.1}, with zero variance in-distribution and higher variance out-of-distribution. The loss-projected posterior improves calibration, which is discussed in Appendix B.%\looseness=-1
+
+% ~\ref{appdx: calib}.%\looseness=-1
+
+
+% We evaluate the performance of Kernel Projection, Loss Kernel Projection, and baselines, including SWAG, Last-Layer Laplace, Diagonal Laplace, and MAP, on standard image classification tasks. Our experiments include LeNet\citep{lecun1989backpropagation} architectures trained on MNIST and Fashion MNIST, as well as ResNet\citep{he2016deep} architectures trained on CIFAR-10\citep{krizhevsky2009learning} and SVHN\citep{netzer2011reading}. We measure in-distribution fit and callibration using metrics such as confidence, accuracy, negative log-likelihood (NLL), Brier score\citep{VERIFICATIONOFFORECASTSEXPRESSEDINTERMSOFPROBABILITY}, expected calibration error (ECE), and maximum calibration error (MCE) \citep{naeini2015obtaining}.
+
+% As shown in Table \ref{tab:id}, Kernel Projection consistently matches the in-distribution performance of MAP. This behavior is expected based on Lemma \ref{lemma:3.1}, as Kernel Projection is designed to have $0$ variance in-distribution while having higher variance out-of-distribution hence maintaining robustness out-of-distribution. Notably, the Loss Kernel Projection shows better calibration across various metrics, including ECE and MCE. This is also expected behavior as discussed in \ref{appdx: calib}
+
+\begin{table*}
+  \caption{In-distribution performance across methods trained on \textsc{mnist}, \textsc{fmnist} \smaller[0.80]{SVHN} and \smaller[0.80]{CIFAR-10}.}
+  \label{tab:id}
+  %
+  % Make colors look slightly better; taken from:
+  % https://tex.stackexchange.com/questions/11198/coloring-columns-in-a-table-with-colortbl-and-booktabs
+  \setlength{\aboverulesep}{0pt}
+  \setlength{\belowrulesep}{0pt}
+  \setlength{\extrarowheight}{.75ex}
+  %
+  \resizebox{\textwidth}{!}{
+    \rotatebox[origin=c]{90}{MNIST~~~~~}\hspace{3mm}
+    \begin{tabular}{lcccccc}
+    \toprule \rowcolor{gray!30}
+                            & Conf.~($\uparrow$)           & NLL~($\downarrow$)          & Acc.~($\uparrow$)           & Brier~($\downarrow$)        & ECE~($\downarrow$)        & MCE~($\downarrow$) \\
+    \midrule
+    MAP &
+            0.981\small{±0.002} &
+            0.080\small{±0.005} &
+            \small{\first{0.977\small{±0.002}}} &
+            1.775\small{±0.004} &
+            0.787\small{±0.009} &
+            0.895\small{±0.014} \\
+    Projected posterior (ours)  &
+            0.981\small{±0.002} &
+            0.080\small{±0.005} &
+            \small{\first{0.977\small{±0.002}}} &
+            1.774\small{±0.004} &
+            0.787\small{±0.009} &
+            0.895\small{±0.014} \\
+    Loss-projected posterior (ours) &
+            0.813\small{±0.018} &
+            1.225\small{±0.099} &
+            0.949\small{±0.000} &
+            \small{\first{1.532\small{±0.028}}} &
+            \small{\first{0.666\small{±0.007}}} &
+            0.894\small{±0.011} \\
+    SWAG &
+            \small{\first{0.982\small{±0.001}}} &
+            \small{\first{0.064\small{±0.006}}} &
+            0.982\small{±0.000} &
+            1.776\small{±0.002} &
+            0.788\small{±0.005} &
+            0.906\small{±0.013} \\
+    Last-Layer & 0.977\small{±0.002} & 0.090\small{±0.005} &
+            0.975\small{±0.002} &
+            1.768\small{±0.003} &
+            0.784\small{±0.007} &
+            \small{\first{0.887\small{±0.008}}} \\
+    Diagonal &
+            0.951\small{±0.008} &
+            0.129\small{±0.016} &
+            0.975\small{±0.001} &
+            1.727\small{±0.012} &
+            0.784\small{±0.008} &
+            0.894\small{±0.015} \\
+
+    \bottomrule
+  \end{tabular} }
+    %\vspace{8mm}
+    %
+    % FMNIST
+  \resizebox{\textwidth}{!}{
+    \rotatebox[origin=c]{90}{FMNIST}\hspace{3mm}
+    \begin{tabular}{lcccccc}
+    % \toprule \rowcolor{gray!30}
+    %                        & Conf.~($\uparrow$)          & NLL~($\downarrow$)          & Acc.~($\uparrow$)           & Brier~($\downarrow$)        & ECE~($\downarrow$)          & MCE~($\downarrow$) \\
+    % \midrule
+    MAP &
+        \small{\first{0.938\small{±0.005}}} &
+        0.325\small{±0.011} &
+        0.897\small{±0.002} &
+        1.713\small{±0.008} &
+        0.732\small{±0.006} &
+        0.901\small{±0.006} \\
+    Projected posterior (ours) &
+        0.937\small{±0.005} &
+        \small{\first{0.325\small{±0.011}}} &
+        0.897\small{±0.002} &
+        1.713\small{±0.008} &
+        0.732\small{±0.006} &
+        0.902\small{±0.006} \\
+    Loss-projected posterior (ours) &
+        0.744\small{±0.031} &
+        1.529\small{±0.371} &
+        0.871\small{±0.006} &
+        \small{\first{1.441\small{±0.041}}} &
+        \small{\first{0.617\small{±0.025}}} &
+        0.901\small{±0.013} \\
+    SWAG &
+        0.931\small{±0.006} &
+        0.327\small{±0.001} &
+        \small{\first{0.898\small{±0.001}}} &
+        1.703\small{±0.008} &
+        0.725\small{±0.003} &
+        0.907\small{±0.003} \\
+    Last Layer &
+        0.931\small{±0.005} &
+        0.339\small{±0.011} &
+        0.896\small{±0.002} &
+        1.703\small{±0.008} &
+        0.727\small{±0.004} &
+        0.902\small{±0.004} \\
+
+    Diagonal &
+        0.735\small{±0.024} &
+        0.922\small{±0.051} &
+        0.855\small{±0.000} &
+        1.431\small{±0.033} &
+        0.621\small{±0.021} &
+        \small{\first{0.895\small{±0.021}}} \\
+
+    \bottomrule
+  \end{tabular} }
+   %
+    % SVHN
+  \resizebox{\textwidth}{!}{
+    \rotatebox[origin=c]{90}{SVHN}\hspace{3mm}
+    \begin{tabular}{lcccccc}
+    % \toprule \rowcolor{gray!30}
+    %                        & Conf.~($\uparrow$)          & NLL~($\downarrow$)          & Acc.~($\uparrow$)           & Brier~($\downarrow$)        & ECE~($\downarrow$)          & MCE~($\downarrow$) \\
+    % \midrule
+    MAP &
+            \small{\first{0.949\small{±0.004}}} &
+            0.188\small{±0.004} &
+            \small{\first{0.949\small{±0.002}}} &
+            1.691\small{±0.004} &
+            0.740\small{±0.012} &
+            0.889\small{±0.004} \\
+    Projected posterior (ours) &
+            \small{\first{0.949\small{±0.004}}} &
+            0.188\small{±0.004} &
+            \small{\first{0.949\small{±0.002}}} &
+            1.691\small{±0.004} &
+            0.740\small{±0.012} &
+            0.889\small{±0.007} \\
+    Loss-projected posterior (ours) &
+            0.948\small{±0.005} &
+            0.191\small{±0.007} &
+            \small{\first{0.949\small{±0.003}}} &
+            1.685\small{±0.013} &
+            \small{\first{0.734\small{±0.017}}} &
+            0.880\small{±0.012} \\
+    SWAG & 0.897±0.007 & 0.217±0.014 & 0.947±0.004 & \small{\first{1.606±0.010}} & 0.745±0.007 & \small{\first{0.874±0.003}} \\
+    Last-Layer &
+            0.943\small{±0.005} &
+            0.197\small{±0.009} &
+            0.946\small{±0.001} &
+            1.681\small{±0.006} &
+            0.740\small{±0.007} &
+            0.899\small{±0.009} \\
+    Diagonal &
+            0.948\small{±0.003} &
+            \small{\first{0.187\small{±0.005}}} &
+            \small{\first{0.949\small{±0.002}}} &
+            1.689\small{±0.003} &
+            0.742\small{±0.011} &
+            0.899\small{±0.000} \\
+
+    \bottomrule
+  \end{tabular} }
+    %
+    % CIFAR-10
+  \resizebox{\textwidth}{!}{
+    \rotatebox[origin=c]{90}{CIFAR-10}\hspace{3mm}
+    \begin{tabular}{lcccccc}
+    % \toprule \rowcolor{gray!30}
+    %                        & Conf.~($\uparrow$)          & NLL~($\downarrow$)          & Acc.~($\uparrow$)           & Brier~($\downarrow$)        & ECE~($\downarrow$)          & MCE~($\downarrow$) \\
+    % \midrule
+    MAP &
+            \small{\first{0.952\small{±0.002}}} &
+            0.422\small{±0{.011}} &
+            \small{\first{0.894\small{±0.002}}} &
+            1.698\small{±0.038} &
+            0.703\small{±0.013} &
+            0.878\small{±0.009} \\
+    Projected posterior (ours) &
+            \small{\first{0.952\small{±0.001}}} &
+            0.422\small{±0{.011}} &
+            \small{\first{0.894\small{±0.002}}} &
+            1.698\small{±0.038} &
+            0.703\small{±0.013} &
+            0.878\small{±0.002} \\
+    Loss-projected posterior (ours) &
+            0.701\small{±0.013} &
+            2.643\small{±0.205} &
+            0.855\small{±0.002} &
+            \small{\first{1.387\small{±0.018}}} &
+            \small{\first{0.559\small{±0.006}}} &
+            \small{\first{0.802\small{±0.005}}} \\
+
+    SWAG &
+            0.914\small{±0.035} &
+            0.445\small{±0.063} &
+            0.865\small{±0.029} &
+            1.670\small{±0.049} &
+            0.694\small{±0.018} &
+            0.881\small{±0.005} \\
+
+    Last-Layer &
+            0.944\small{±0.001} &
+            \small{\first{0.406\small{±0.005}}} &
+            \small{\first{0.894\small{±0.001}}} &
+            1.712\small{±0.001} &
+            0.704\small{±0.000} &
+            0.880\small{±0.007} \\
+    % Diagonal &
+    %         0.416\small{±0.047} & 11828.7
+    %         69±112\small{50.319} &
+    %         0.108\small{±0.006} &
+    %         1.108\small{±0.043} & 0.316±0.047 &
+    %         0.658\small{±0.082} \\
+    Diagonal &
+            0.934\small{±0.028} &
+            0.465\small{±0.069} &
+            0.872\small{±0.032} &
+            1.698\small{±0.038} &
+            0.703\small{±0.013} &
+            0.873\small{±0.005} \\
+    \bottomrule
+  \end{tabular} }
+\end{table*}
+
+
+\begin{table*}
+  \caption{Out-of-distribution \textsc{auroc}~($\uparrow$) performance for \textsc{mnist}, \textsc{fmnist}, \smaller[0.80]{SVHN} and \smaller[0.80]{CIFAR-10}.}
+  \label{tab:ood}
+  %
+  % Make colors look slightly better; taken from:
+  % https://tex.stackexchange.com/questions/11198/coloring-columns-in-a-table-with-colortbl-and-booktabs
+  \setlength{\aboverulesep}{0pt}
+  \setlength{\belowrulesep}{0pt}
+  \setlength{\extrarowheight}{.75ex}
+  %
+% MNIST
+  \resizebox{\textwidth}{!}{
+    \begin{tabular}{lcccccccccc}
+    \toprule 
+    \rowcolor{gray!30} Trained on & \multicolumn{3}{c}{\rule[0.9mm]{20mm}{0.1mm} \textsc{mnist} \rule[0.9mm]{20mm}{0.1mm}} & \multicolumn{3}{c}{\rule[0.9mm]{20mm}{0.1mm} \textsc{fmnist} \rule[0.9mm]{20mm}{0.1mm}} & \multicolumn{2}{c}{\rule[0.9mm]{12mm}{0.1mm} \smaller[0.80]{CIFAR-10} \rule[0.9mm]{12mm}{0.1mm}} & 
+    \multicolumn{2}{c}{\rule[0.9mm]{12mm}{0.1mm} \smaller[0.80]{SVHN} \rule[0.9mm]{12mm}{0.1mm}}
+    \\
+    \rowcolor{gray!30} Tested on & \textsc{fmnist} & \textsc{emnist} & \textsc{kmnist} & \textsc{mnist} & \textsc{emnist} & \textsc{kmnist} & \textsc{svhn} & \smaller[0.80]{CIFAR-100} & \smaller[0.80]{CIFAR-10} & \smaller[0.80]{CIFAR-100} \\ 
+    \midrule
+    MAP & 0.924±0.015 & 0.888±0.010 & 0.846±0.019 & 0.714±0.001 & 0.788±0.016 & 0.664±0.012 & 0.874±0.002 & 0.816±0.026 & 
+    0.960±0.007 & 0.954±0.008\\
+    
+    Proj.\@ (ours) & \first{0.926±0.013} & 0.904±0.004 & \first{0.862±0.011} & 0.861±0.029 & 0.844±0.032 & 0.867±0.012 & \first{0.881±0.002} & \first{0.836±0.004} & 
+    0.960±0.002 & 0.957±0.001\\
+    
+    Loss-proj.\@ (ours) & 0.899±0.011 & 0.893±0.006 & 0.856±0.002 & \first{0.914±0.035} & \first{0.928±0.007} & \first{0.907±0.026} & 0.863±0.008 & 0.800±0.013 &  
+    \first{0.966±0.009} & \first{0.960±0.006}\\
+    SWAG & 0.917±0.024 & \first{0.916±0.010}  & 0.861±0.032 &
+            0.685±0.014 & 0.751±0.032 & 0.655±0.015 & 0.798±0.040 & 0.782±0.042 & 
+            0.777±0.029 & 0.787±0.027\\
+    
+    Last-Layer & 0.793±0.215 & 0.782±0.182 & 0.759±0.166 &
+                   0.768±0.001 & 0.824±0.016 & 0.699±0.020 & 0.811±0.024 & 0.801±0.026 &  
+                   0.914±0.005 & 0.908±0.005\\
+    
+    Diagonal & 0.772±0.218 & 0.768±0.191 & 0.745±0.174 & 
+                0.726±0.028 & 0.725±0.034 & 0.683±0.013 & 0.836±0.022 & 0.806±0.027 &  
+                0.917±0.005 & 0.916±0.004\\
+
+    \bottomrule
+  \end{tabular} }
+\end{table*}
+
+
+\begin{table*} %[t]
+  \caption{In- and out-of-distribution metrics for SWIN transformer trained on ImageNet and tested on \textsc{places365}.}
+  \label{tab:imagenet}
+  %
+  % Make colors look slightly better; taken from:
+  % https://tex.stackexchange.com/questions/11198/coloring-columns-in-a-table-with-colortbl-and-booktabs
+  \setlength{\aboverulesep}{0pt}
+  \setlength{\belowrulesep}{0pt}
+  \setlength{\extrarowheight}{.75ex}
+  %
+  \resizebox{0.7\textwidth}{!}{
+    \begin{tabular}{lccccccc}
+    \toprule 
+    \rowcolor{gray!30}
+    & Conf.~($\uparrow$)           & NLL~($\downarrow$)      & Acc.~($\uparrow$)           & Brier~($\downarrow$) 
+    & ECE~($\downarrow$)        & MCE~($\downarrow$) 
+    & AUROC ~($\uparrow$)             \\
+    \midrule
+    \textsc{map} & \first{0.626} & \first{1.358} & \first{0.726} & 0.407 & 0.136 & 0.583 & 0.751 \\
+Loss-projected posterior & 0.618 & 1.427 & 0.716 & \first{0.394} & \first{0.107} & \first{0.259} & \first{0.756} \\
+    \bottomrule
+  \end{tabular} }
+\end{table*}
+
+
+\begin{figure*}
+  \includegraphics[width=0.49\linewidth]{figures/MNIST_std_gen_1.pdf}
+  %\caption{ decoder variance.}
+  %\centering
+  \includegraphics[width=0.49\linewidth]{figures/FMNIST_std_gen_1.pdf}
+  \vspace{-4mm}
+  \caption{\textbf{Variational autoencoder reconstructions and corresponding uncertainty estimates.} \emph{Left:} mean reconstructions of MNIST and Fashion MNIST images sampled from the latent space. \emph{Right:} pixel-wise uncertainty estimates generated by sampling decoder parameters from the Loss Kernel Posterior, highlighting key semantic features such as edges and contours. This demonstrates Projected Laplace's ability to capture uncertainty in high-dimensional generative models.
+}
+  \label{fig:VAE variance}
+\end{figure*}
+
+
+\paragraph{Distribution shift (Fig.~\ref{fig:shift_plots}).}
+%
+% We further assess the robustness of the predictive uncertainties under distribution shifts by evaluating performance on \textsc{rotated-mnist}, \textsc{rotated-fmnist}, and \textsc{corrupted cifar} (with fog and Gaussian blur corruptions). As depicted in Figure \ref{fig:shift_plots}, we observe that Loss Kernel Projection maintains low and stable calibration error across increasing shift intensities, whereas Kernel Projection preserves high accuracy under similar conditions. 
+%
+To assess robustness under distribution shifts, we evaluate the robustness of predictive uncertainties using \textsc{rotated-mnist}, \textsc{rotated-fmnist}, and \textsc{corrupted cifar} (with fog and Gaussian blur). The loss-projected posterior maintains low, stable calibration error with increasing shift intensity, while the projected posterior retains high accuracy (Fig.~\ref{fig:shift_plots}).
+
+
+\begin{figure}[t]
+  \includegraphics[width=\linewidth]{figures/corrupted3.pdf}
+    % \includegraphics[width=0.5\textwidth]{figures/r-mnist.pdf}\hfill
+    % \includegraphics[width=0.5\textwidth]{figures/r-fmnist.pdf}
+    % \vfill
+    %     \includegraphics[width=0.5\textwidth]{figures/cifar-c-blur.pdf}\hfill
+    % \includegraphics[width=0.5\textwidth]{figures/cifar-c-fog.pdf}
+    \vspace{-8mm}
+    \caption{Model calibration and fit on in-distribution test data (left) and under distribution shift (middle, right) where we plot shift intensities against accuracy and expected calibration error (\textsc{ece}), respectively.} 
+    
+    % For Rotated-MNIST and FMNIST, shift intensities refer to degrees of rotation, while for Corrupted CIFAR-10, they refer to the amount of image distortion. Loss-Projected posterior is the best-calibrated model at the expense of slightly worse accuracy whereas Projected posterior matches MAP performance.}
+    \label{fig:shift_plots}
+\end{figure}
+
+
+\paragraph{Out-of-distribution detection (Table~\ref{tab:ood}).}
+% For out-of-distribution (OOD) detection, we use the maximum variance of logits across output dimensions as an OOD score for all the Bayesian Posteriors, while the MAP baseline uses maximum softmax as its OOD score which is a very strong baseline. Theoretical considerations suggest that in-distribution variance of the Kernel Projection posterior should be near zero, making it a strong OOD detection signal. Experimental results, as summarized in Table \ref{tab:ood}, validate this hypothesis: Kernel Projection achieves superior AUROC scores across a range of OOD tasks compared to other baselines. 
+%
+For out-of-distribution (\textsc{ood}) detection, we use the maximum variance of logits across output dimensions as an \textsc{ood} score for all Bayesian posteriors, while the \textsc{map} baseline employs maximum softmax, which is a strong baseline. Lemma~\ref{lemma:3.1} dictates that the in-distribution variance of the projected posterior is zero, providing a strong \textsc{ood} detection signal. Table~\ref{tab:ood} supports the theory, showing that the projected posterior achieves superior \textsc{auroc} scores across various \textsc{ood} tasks over baselines. 
+% Note that \textsc{swag} did not converge in 2 of the 3 samples, presumably because momentum and learning rate required more tuning. We often saw such issues.
+
+
+
+\subsection{ImageNet and CelebA vision transformer}
+\begin{mdframed}[backgroundcolor=myblue, linecolor=blue!75!black]
+\textbf{Hypothesis:} The projected posterior scales effectively to large models and datasets, such as SWIN transformers trained on ImageNet and CelebA.
+\end{mdframed}
+% We evaluate the scalability of Projected Laplace by sampling from the Loss Kernel Poster of a SWIN transformer\citep{liu2021swin} pretrained on the ImageNet-1K dataset\citep{deng2009imagenet, russakovsky2015imagenet}, which contains roughly 1 million images of input dimension of $224\times224\times3$ and output dimension of $1000$. Despite only marginal improvements over MAP, the key result is that the method scales efficiently to this large-scale setting. The use of projection approximations ensures that computational complexity grows linearly with model size, making it feasible to apply this method to high-dimensional models like Vision Transformers. For out-of-distribution detection, we test the model on \textsc{places365}\citep{zhou2017places}
+
+% These results demonstrate that Projected Laplace is a practical solution for uncertainty estimation in large models, balancing scalability with computational efficiency while maintaining competitive performance.
+
+We assess the scalability of our approach by sampling from the loss-projected posterior of a SWIN transformer \citep{liu2021swin} pre-trained on the ImageNet-1K dataset \citep{deng2009imagenet, russakovsky2015imagenet}, which includes about 1 million images of size $224\times224\times3$ with 1000 output classes. Table~\ref{tab:imagenet} shows marginal improvement in-distribution calibration over \textsc{map} alongside improved out-of-distribution detection on \textsc{places365} \citep{zhou2017places}. \emph{The main point is that our method scales gracefully to large models and datasets due to linear complexity.}
+%c
+%These results show that we provide an effective solution for uncertainty estimation in large models, balancing scalability and computational efficiency while maintaining competitive performance.
+
+
+
+
+%\hrittik{Add a paragraph on celelba + van}
+We further consider a 4M parameter Visual Attention network (\textsc{VAN})\citep{guo2023visual}. We train on \textsc{CelebA} \citep{liu2015faceattributes} holding out three classes. \cref{tab:results_celeba} reports \textsc{auroc} scores to measure the ability to detect the three held-out classes and \textsc{Food101} \citep{bossard2014food} as out-of-distribution. Both our method and baselines have a limited memory budget of $300P$  numbers. \textsc{lla} and local ensemble are implemented using Lanczos and we also include our projected score computed with Lanczos as a reference. %; we also compare to Deep Ensemble \citep{Lakshminarayanan2016deepensembles} with 10 models, SCOD \citep{sharma2021sketching}, SWAG \citep{maddox2019simple}, SLU \citep{miani:sketching:2024} and Max Logit.
+The projected posterior outperforms the baselines on the three most challenging settings and is only second to \textsc{scod} in the last. The loss-projected posterior shows a minor drop in performance.
+
+
+
+% CelebA table
+\begin{table}[t]
+    \vspace{-3mm}
+    \caption{\textsc{auroc} (3 seeds) for a \textsc{VAN} trained on \textsc{CelebA}. Details are in the appendix.}
+    \label{tab:results_celeba}
+    %\centering
+    \setlength{\aboverulesep}{0pt}
+    \setlength{\belowrulesep}{0pt}
+    \setlength{\extrarowheight}{.75ex}
+    \resizebox{\linewidth}{!}{
+    \begin{tabular}{lcccc}
+    \toprule 
+    \rowcolor{gray!30}
+        & Food101 & Bald only & Eyeglasses only & Mustache only \\ \midrule
+    Max logit & 0.959$\pm$0.008  & 0.32$\pm$0.00  & 0.57$\pm$0.01  & 0.40$\pm$0.03  \\
+    Deep ensemble & 0.957  & 0.71  & 0.74  & 0.61  \\
+    Proj.\@ (ours) & 0.958$\pm$0.004  & \first{0.81$\pm$0.03}  & \first{0.75$\pm$0.01}  & \first{0.66$\pm$0.01}  \\
+    Loss-proj.\@ (ours) & 0.947$\pm$0.007  & 0.76$\pm$0.03  & 0.72$\pm$0.01  & 0.62$\pm$0.01  \\
+    Proj-Lanczos & 0.954$\pm$0.004  & 0.80$\pm$0.03  & 0.74$\pm$0.01  & 0.64$\pm$0.01  \\
+    Local ensemble & 0.951$\pm$0.003  & 0.79$\pm$0.04  & 0.73$\pm$0.01  & 0.63$\pm$0.01  \\
+    LLA & 0.954$\pm$0.00  & 0.80$\pm$0.03  & 0.74$\pm$0.01  & 0.64$\pm$0.01  \\
+    LLA-diag & 0.797$\pm$0.021  & 0.54$\pm$0.03  & 0.57$\pm$0.02  & 0.45$\pm$0.03  \\
+    SCOD & \first{0.964$\pm$0.000}  & 0.79$\pm$0.03  & 0.73$\pm$0.01  & 0.64$\pm$0.01  \\
+    SWAG & 0.740$\pm$0.021  & 0.70$\pm$0.08  & 0.52$\pm$0.04  & 0.49$\pm$0.04 \\
+    SLU & 0.953$\pm$0.003  & 0.80$\pm$0.03  & 0.74$\pm$0.01  & 0.64$\pm$0.01 \\
+    \bottomrule
+    
+    \end{tabular}
+    }
+\end{table}
+
+
+
+\subsection{Generative models}
+
+% \begin{tcolorbox}[colback=blue!5!white,colframe=blue!75!black]
+%   $\bm{Claim:}$ Projected Laplace is versatile enough to handle diverse tasks, including generative models with large output dimensions.
+% \end{tcolorbox}
+
+% We test the applicability of Projected Laplace on variational autoencoders\citep{kingma2013auto} trained on \textsc{mnist} and \textsc{fashion mnist}, demonstrating its flexibility in handling models with high-dimensional outputs. After training, we sample decoder parameters from the Loss Kernel Posterior and generate images from latent space samples. As seen in Figure \ref{fig:VAE variance}, the sampled decoders produce diverse reconstructions with pixel-wise uncertainty estimates that capture meaningful semantic features, such as the edges of the images. \hrittik{standard vae variances are shit \citep{arvanitidis2017latent}} \marco{Can we have plots of those?}
+
+% This experiment underscores the ability of Projected Laplace to scale to generative models with vast output spaces, while preserving critical predictive uncertainties. Its adaptability to tasks beyond classification and without modification makes it a robust tool for a wide range of machine-learning problems, particularly those involving complex, high-dimensional outputs.
+
+
+\begin{mdframed}[backgroundcolor=myblue, linecolor=blue!75!black]
+\textbf{Hypothesis:} The loss-projected posterior scales to generative models with large output dimensions.
+\end{mdframed}
+
+We evaluate the loss-projected posterior on variational autoencoders \citep{kingma2013auto} trained on \textsc{MNIST} and \textsc{Fashion MNIST}, showcasing its flexibility with high-dimensional outputs and diverse tasks. After training, we sample decoder parameters to generate images from latent space samples. Fig.~\ref{fig:VAE variance} shows that  the sampled decoders produce diverse reconstructions with pixel-wise uncertainty estimates that capture meaningful features.\looseness=-1
+
+\emph{This experiment highlights that our approach scales to generative models while preserving essential predictive uncertainties.} Its adaptability beyond classification makes it a robust tool for diverse tasks.
+
+
