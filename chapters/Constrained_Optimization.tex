@@ -1,15 +1,23 @@
 \chapter{Constrained Optimization in Parameter Manifold}
 \label{chap:constr_opt}
-
-
-
 \begin{keypointsbox}
 \noindent
-\textbf{Key points (Chapter~\ref{chap:linalg}).}
+\textbf{Key points (Chapter~\thechapter).}
 \begin{enumerate}\setlength{\itemsep}{2pt}
-  \item \textbf{The dataset-restricted model map.}
+    \item \textbf{Constraints induce a fibre structure.}
+    A constraint map $c:\mathbb{R}^P\to\mathbb{R}^k$ partitions parameter space into level sets
+    $\mathcal{M}_\theta=\{\theta':c(\theta')=c(\theta)\}$ whose tangent spaces are $\ker(\mathbf{J}_c(\theta))$.
+    \item \textbf{Reparameterizing constraints does not change the tangent/normal split.}
+    If $\tilde c=\phi\circ c$ with $\phi$ locally invertible, then $\ker(\mathbf{J}_{\tilde c}(\theta))=\ker(\mathbf{J}_c(\theta))$
+    and $\mathrm{im}(\mathbf{J}_{\tilde c}(\theta)^\top)=\mathrm{im}(\mathbf{J}_c(\theta)^\top)$.
+    \item \textbf{A classical method reappears.}
+    Following this geometric splitting yields the \emph{null-space method} for equality constraints:
+    a projected step that improves the task loss while (to first order) preserving feasibility, plus a Gauss--Newton-like correction that reduces constraint violation.
+    \item \textbf{Matrix-free least squares makes it practical for deep nets.}
+    The method only requires Jacobian--vector products with $\mathbf{J}_c$ and $\mathbf{J}_c^\top$ and can therefore be implemented using the same least-squares primitives developed in Chapter~\ref{chap:linalg}.
 \end{enumerate}
 \end{keypointsbox}
+
 
 \begin{center}
 \begin{minipage}{0.95\linewidth}
@@ -24,59 +32,240 @@
 
 
 \noindent
-In the previous chapter, we explored the parameter space geometry of models in Bayesian Deep Learning. However, to accomplish anything of practical significance, we need to be able to compute geometric quantities on this manifold. At first inspection, this task might seem completely hopeless. The parameter space is a $D$-dimensional manifold, where $D$ is the number of parameters, which can be at the order of billions. However, as we will show in this chapter, the decomposition of the tangent space of the manifold into the kernel and image can make various computations tractable. 
+Chapters~\ref{chap:setting}--\ref{chap:linalg} developed a geometric view of parameter space and a set of matrix-free linear-algebra primitives
+for computing projections and least-squares solves at deep-learning scale.
+In Chapters~\ref{ch:laplace}--\ref{chap:vi} we primarily applied these tools to Bayesian deep learning. However, it is our claim that the geometric perspective that we have developed and the linear algebraic tools to operationalize them are applicable far more generaaly
+To demonstrate this, in this chapter, we apply the same machinery in a completely different setting: \emph{constrained optimisation}.
+We show that thinking about constrained optimization from a geometric perspective immediately recovers a classical but comparatively underused method in deep learning practice---the \emph{null-space method}---and shows how it becomes practical once written in matrix-free least-squares form.
 
-In this chapter, we will begin with a brief recap of the parameter space geometry derived from the previous chapter. We will then proceed to show how this geometry affects the computation of various geometric quantities that live on this manifold, and finally, how they mostly translate to well-known linear algebra problems. Finally, we will develop linear algebra algorithms that can scale to large models.
-\subsection{What To Do With Them: Constrained Optimisation of Neural Networks}
-\label{sec: constrained opt}
-In the remainder of this paper, we turn to novel applications of least squares in deep learning. First, we focus on constrained optimisation of neural networks. 
-Numerous desirable properties, such as physical principles, equivariance, or sparsity, can be incorporated through model constraints. 
-Consider the problem
+\begin{figure}
+    \footnotesize
+    
+\begin{tikzpicture}[
+    every node/.style={
+    draw,
+    rectangle,
+    rounded corners,
+    minimum height=1.0cm,
+    align=center,
+    inner sep=4pt
+  },
+node distance=1.5cm,
+  every path/.style={
+    ->,
+    thick,
+    >=stealth
+  }
+]
+
+\node [fill=blue!5] (A) {Any (differentiable)\\constraint};
+
+\node [fill=orange!15] (B) [below of=A]
+  {Differentiable, \\ matrix-free \\ projection};
+
+\node [fill=orange!15] (C) [right of=B, xshift=1.4cm]
+  {\textbf{Constrained} \\ \textbf{optimisation}};
+
+\node [fill=purple!10] (D) [left of=B, xshift=-1.4cm]
+  {Differentiable, \\ matrix-free \\ \texttt{LstSq}\\(e.g. LSMR)};
+
+\node [fill=blue!5] (E) [below of=B]
+  {Any model and \\ unconstrained loss};
+
+\node [fill=blue!5] (F) [above of=C]
+  {Any optimiser:\\ Adam, SGD, \ldots};
+
+\draw (A) -- (B);
+\draw (B) -- (C);
+\draw (D) -- (B);
+\draw (E) -| (C);
+\draw (F) -- (C);
+
+\end{tikzpicture}
+
+\caption{Constrained optimization via \textsf{LstSq}.}
+\label{figure-one}
+\end{figure}
+
+
+% ------------------------------------------------------------
+\section{Setting: Equality-Constrained Optimisation in Deep Learning}
+\label{sec:constr_setting}
+
+Many desirable inductive biases and structural properties can be expressed as constraints:
+physical laws, equivariance/invariance, conservation properties, sparsity budgets, or calibration constraints on intermediate representations.
+We consider the equality-constrained learning problem
 \begin{align}
-    \label{eq:constr_opt_nn}
-    \vec{\theta}^\star = \arg\min_{\vec{\theta} \in \mathbb{R}^d} \Big\{\mathbb{E}_{x\sim\mathcal{X}} \left[ \mathcal{L}(\vec{\theta}, x) \right] ~~ \text{s.t.} ~~ \vec{c}(\vec{\theta}) = \vec{0}\Big\},
+\label{eq:constr_opt_nn_ch8}
+    \theta^\star \in \arg\min_{\theta\in\mathbb{R}^P}
+    \ \mathbb{E}_{x\sim\mathcal{X}}\!\left[\mathcal{L}(\theta;x)\right]
+    \quad \text{s.t.}\quad
+    c(\theta)=0,
 \end{align}
-where $\vec{\theta} \in \mathbb{R}^d$ represents the network parameters, $\mathcal{L}$ is the task loss, and $\vec{c}: \mathbb{R}^d \to \mathbb{R}^k$ defines $k \in \mathbb{N}$ constraints, which shall be continuously differentiable, and we assume that the number of constraints is smaller than the parameter dimension.
-The loss and $\theta$ are unrelated to those in previous sections.
-\Cref{table-structure-learning-examples} (Appendix) shows examples for constraints appearing in combination with neural networks.
-Standard optimisers like Adam \citep{kingma2014adam} are ill-suited for solving \Cref{eq:constr_opt_nn}, since they operate exclusively in the unconstrained parameter space. 
-However, the solution $\vec{\theta}^\star$ of \Cref{eq:constr_opt_nn} must satisfy the Karush-Kuhn-Tucker conditions \citep{nocedal1999numerical}: primal feasibility (satisfying the constraint) and Lagrangian stationarity. 
-Finding a $\vec{\theta}^\star$ that simultaneously satisfies both conditions can be challenging, particularly for non-linear constraints in high-dimensional parameter spaces encountered in deep learning.
+where $\theta\in\mathbb{R}^P$ denotes parameters, $\mathcal{L}$ a task loss, and $c:\mathbb{R}^P\to\mathbb{R}^k$ a continuously differentiable constraint map with $k\ll P$.
 
-The \emph{null-space method}~\citep{yamashita1980differential} proposes an iterative algorithm that circumvents these issues. Instead of enforcing the constraint directly, \citet{yamashita1980differential} proposes to enforce its first-order approximation, which amounts to solving a sequence of local problems with linearised constraints; for some $\theta_t \in \mathbb{R}^d$, it enforces
+
+The \cref{table-structure-learning-examples} provides concrete examples of constrained optimisation in deep learning with relevant references 
+
+\begin{table}[t]
+  \caption{Examples for imposing structure via constrained optimisation.
+}
+  \label{table-structure-learning-examples}
+\begin{center}
+    \small
+    \begin{tabular}{p{0.21\textwidth} p{0.27\textwidth} p{0.39\textwidth}}
+    \toprule
+    Structure 
+        & Constraint $\vec{c}_\psi(\theta)$ 
+        & Key references 
+        \\
+    \midrule 
+    $G$-Equivariance 
+        & $T_g(f(\vec{x}; \vec{\theta})) - f(T'_g(\vec{x}); \vec{\theta})$ 
+        & \citet{cohen2016group, finzi2021practical}
+        \\
+    $G$-Invariance 
+        & $f(T_g(\vec{x}); \vec{\theta}) - f(\vec{x}; \vec{\theta})$ & \citet{puny2021frame}
+    \\ 
+    $\ell_0$-Sparsity 
+        & $\frac{\| \theta\|_0}{D} - s_{\textrm{target}}$  
+        & \citet{louizos2017learning, gallego2022controlled} 
+        \\ 
+    Adversarial robustness 
+        & $\mathbb{E}_{\mathbf{x}_{\textrm{clean}}, y}[l(f_\theta({x}_{\textrm{clean}}), y)] \leq \delta$ 
+        & \citet{robey2021adversarial} 
+        \\ 
+    Conservativeness 
+            & $\mathbb{E}_{\vec{p(x)}}[\|\frac{\partial s}{\partial x} - \frac{\partial s}{\partial x}^T\|_F^2]$ 
+        & \citet{chao2022investigating} 
+        \\ 
+    \bottomrule
+  \end{tabular}
+  \end{center}
+\end{table}
+Standard optimisers such as SGD or Adam \citep{kingma2014adam} operate in the unconstrained parameter space and do not enforce feasibility.
+At a solution, one expects (under regularity conditions) \emph{primal feasibility} $c(\theta^\star)=0$ and \emph{Lagrangian stationarity}:
+there exists $\lambda^\star\in\mathbb{R}^k$ such that
 \begin{align}
-\vec{c}(\theta) \approx \vec{c}(\theta_t) + \vec{J}_\vec{c}(\vec{\theta}_t)(\vec{\theta} - \vec{\theta}_t) = \vec{0}.
+\label{eq:kkt_stationarity}
+\nabla_\theta \mathcal{L}(\theta^\star)=\mathbf{J}_c(\theta^\star)^\top \lambda^\star,
+\end{align}
+where $\mathbf{J}_c(\theta)\in\mathbb{R}^{k\times P}$ is the constraint Jacobian. Simultaneously satisfying both conditions can be difficult in high-dimensional, nonconvex settings. 
+
+
+% ------------------------------------------------------------
+\section{Constraint Geometry on the Parameter Space}
+\label{sec:constr_geometry}
+In \cref{chap:setting} we developed a geometry on the parameter space induced by the model map. Specifically, at each parameter $\theta$, the fibres of the model map induce a local decomposition of the tangent space into directions that change the model output and directions where the model output remails constant. Nothing in that construction necessarily requires us to consider the model map. Any function (under some mild conditions) can play the role of model map in that construction. In this section the role of the model map is played by the constraint function $\mathbf{c}: \mathbb{R}^d \to \mathbb{R}^k$ which the defines $k \in \mathbb{N}$ equality constraints.
+
+Following the construction from \cref{chap:setting}, we end up with a parameter space manifold $\Theta$, where at each $\theta$ we can split the tangent space into two different subspaces: $T_\theta\Theta = H_\theta \oplus V_\theta$, where $V_\theta = \texttt{null}(\mathbf{J}_\mathbf{c}(\theta))$ and $H_\theta = \texttt{im}(\mathbf{J}_\mathbf{c}(\theta)^\top)$ is its orthogonal complement. $\mathbf{J}_\mathbf{c}$ is the Jacobian of the constraint function. Finally we can define a metric on this manifold given by $ g_\theta((\delta,\varphi), (\delta', \varphi')) = g^{\mathrm{hor}}_\theta(\delta, \delta') + g^{\mathrm{ver}}_\theta(\varphi, \varphi')$, where $g^{\mathrm{hor}}_\theta$ is a metric on $H_\theta$ and $g^{\mathrm{ver}}_\theta$ is a metric on $V_\theta$. We define $g^{\mathrm{hor}}_\theta = \mathbf{J}_\mathbf{c}(\theta)^\top \mathbf{J}_\mathbf{c}(\theta)$ to be the pullback of the euclidean metric from the output of constraint function, ad $g^{\mathrm{ver}}_\theta = \mathbb{I}$ is the euclidean metric.
+
+
+The decomposition $T_\theta\Theta = H_\theta \oplus V_\theta$ admits a very direct and useful interpretation in the constrained setting.
+A displacement $\varphi\in V_\theta=\texttt{null}(\mathbf{J}_{\mathbf c}(\theta))$ lies in the kernel of the constraint differential, and therefore does \emph{not} change the constraint value to first order:
+\begin{align}
+\mathbf c(\theta+\varphi)
+\;\approx\;
+\mathbf c(\theta) + \mathbf{J}_{\mathbf c}(\theta)\,\varphi
+\;=\;
+\mathbf c(\theta).
+\end{align}
+Thus, directions in $V_\theta$ are precisely those along which we can reduce the task loss while remaining on the same constraint fibre. This immediately suggests a constrained optimization algorithm. Imagine that we initialize our model to satisfy some constraint. Instead of the usual gradient descent updates, $\theta \leftarrow \theta  \,-  \,\eta  \,\nabla_\theta \mathcal{L}(\theta ; x)$, suppose we project the gradient onto the $V_\theta$ i.e. $\theta \leftarrow \theta - \,\eta \, \textsf{Proj}_V(\theta, \,\nabla_\theta \mathcal{L}(\theta ; x))$. This would give us a gradient descent algorithm that minimizes the task loss while keeping the constraint constant. 
+
+Conversely, a displacement $\delta\in H_\theta=\texttt{im}(\mathbf{J}_{\mathbf c}(\theta)^\top)$ necessarily points in a direction that \emph{does} affect the constraint value (again, to first order).
+Indeed, restricting to $H_\theta$ removes the indeterminacy of the constraint Jacobian: on $H_\theta$ the map
+\(
+\mathbf{J}_{\mathbf c}(\theta):H_\theta\to\mathbb{R}^k
+\)
+is injective (and under the standard full-row-rank assumption, an isomorphism onto $\mathbb{R}^k$).
+This makes $H_\theta$ the natural subspace in which to \emph{ correct} constraint violations. The constraint violation is naturally measured by the squared norm $\tfrac12\|\mathbf c(\theta)\|_2^2$.  For the constraint term, note that $\nabla \tfrac12\|\mathbf c(\theta)\|_2^2 = \mathbf{J}_{\mathbf c}(\theta)^\top \mathbf c(\theta)\in H_\theta$. Thus, the Riemannian gradient of the constraint-violation energy is
+\begin{align}
+\label{eq:riem_grad_constraint}
+(g^{\mathrm{ver}}_\theta)^{-1}\mathbf{J}_{\mathbf c}(\theta)^\top \mathbf c(\theta)
+\;=\;
+\big(\mathbf{J}_{\mathbf c}(\theta)^\top \mathbf{J}_{\mathbf c}(\theta)\big)^{-1}\mathbf{J}_{\mathbf c}(\theta)^\top \mathbf c(\theta),
+\end{align}
+This suggests a general constrained optimization algorithm, which does not assume that we satisfy the constraint at initialization. We will make constraint corrections on $H_\theta$ and minimize the task loss on $V_\theta$, which keeps the constraint constant while minimizing the loss. Concretely, this gives us the following update:
+\begin{align}
+\label{eq:null_space_geom}
+    \theta_{t+1} &= \theta_{t} \, - \, \eta \big( \textsf{Proj}_V(\theta, \,\nabla_\theta \mathcal{L}(\theta ; x)) \, +  (g^{\mathrm{ver}}_\theta)^{-1} \nabla \tfrac12\|\mathbf c(\theta)\|_2^2 \big) \\
+     \textsf{Proj}_V(\theta, \,\nabla_\theta \mathcal{L}(\theta ; x)) &= \big( \mathbb{I} \, - \, \mathbf{J_{c}}(\theta_t)^{\top}(\mathbf{J_{c}}(\theta_t) \mathbf{J_{c}}(\theta_t)^{\top})^{-1}\mathbf{J_{c}}(\theta_t) \big) \nabla\mathcal{L}(\theta_{t}) \\
+     (g^{\mathrm{ver}}_\theta)^{-1} \nabla \tfrac12\|\mathbf c(\theta)\|_2^2 &=  \big(\mathbf{J}_{\mathbf c}(\theta)^\top \mathbf{J}_{\mathbf c}(\theta)\big)^{-1}\mathbf{J}_{\mathbf c}(\theta)^\top \mathbf c(\theta)
+\end{align}
+
+
+\subsection{Illustration}
+\label{sec:constr_geometry_tikz}
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[scale=1.0]
+  % Axes
+  \draw[->] (-3.2,0) -- (3.2,0) node[right] {$\theta_1$};
+  \draw[->] (0,-2.6) -- (0,2.6) node[above] {$\theta_2$};
+
+  % Level sets (fibres)
+  \draw[thick] (-3, 1.6) .. controls (-1.2,1.1) and (1.2,1.1) .. (3,1.6);
+  \draw[thick] (-3, 0.0) .. controls (-1.2,-0.5) and (1.2,-0.5) .. (3,0.0);
+  \draw[thick] (-3,-1.6) .. controls (-1.2,-2.1) and (1.2,-2.1) .. (3,-1.6);
+
+  % Point theta_t on middle fibre
+  \fill (1.2,-0.3) circle (2.2pt) node[below right] {$\theta_t$};
+
+  % Tangent direction (kernel)
+  \draw[->,very thick] (1.2,-0.3) -- (2.5,-0.55) node[right] {$\delta_T\in\ker(\mathbf{J}_c(\theta_t))$};
+
+  % Normal direction (row space)
+  \draw[->,very thick] (1.2,-0.3) -- (1.5,0.9) node[above right] {$\delta_N\in\mathrm{im}(\mathbf{J}_c(\theta_t)^\top)$};
+
+  % Labels
+  \node at (-2.25,1.95) {$c(\theta)=\text{const}$};
+\end{tikzpicture}
+\vspace{-2mm}
+\caption{Constraint fibres (level sets) and the local splitting into tangent directions (constraint-nullspace) and normal directions (row space).
+The null-space method will move along the fibre to reduce the loss while adding a transverse correction to reduce constraint violation.}
+\label{fig:constraint_fibres_tikz}
+\end{figure}
+
+
+% ------------------------------------------------------------
+\section{Method: The Null-Space Method from a Least-Squares Projection}
+\label{sec:constr_method}
+
+We have recovered the \emph{null-space method}~\citep{yamashita1980differential} which proposes an iterative algorithm. Instead of enforcing the constraint directly, \citet{yamashita1980differential} proposes to enforce its first-order approximation, which amounts to solving a sequence of local problems with linearised constraints; for some $\theta_t \in \mathbb{R}^d$, it enforces
+\begin{align}
+\mathbf{c}(\theta) \approx \mathbf{c}(\theta_t) + \mathbf{J}_\mathbf{c}(\mathbf{\theta}_t)(\mathbf{\theta} - \mathbf{\theta}_t) = \mathbf{0}.
 \end{align} 
 An algorithm is derived by studying a differential equation whose critical points are the solution to an equality-constrained optimization problem. Discretizing such a flow with learning rates $\eta, \gamma > 0$ yields
 % Equation 11: Split to fit column
 \begin{subequations}
 \begin{align}
 \theta_{t+1} &=  \theta_t -\eta \nabla\mathcal{L}(\theta_{t})  + \eta \mathcal{I}_1(\theta_t)+ \gamma\mathcal{I}_2(\theta_t) \\ 
-\mathcal{I}_1(\theta_t) &= \vec{J_{c}}(\theta_t)^{\top}(\vec{J_{c}}(\theta_t) \vec{J_{c}}(\theta_t)^{\top})^{-1}\vec{J_{c}}(\theta_t) \nabla\mathcal{L}(\theta_{t}) 
+\mathcal{I}_1(\theta_t) &= \mathbf{J_{c}}(\theta_t)^{\top}(\mathbf{J_{c}}(\theta_t) \mathbf{J_{c}}(\theta_t)^{\top})^{-1}\mathbf{J_{c}}(\theta_t) \nabla\mathcal{L}(\theta_{t}) 
 \\ 
-\mathcal{I}_2(\theta_t) &= \vec{J_{c}}(\theta_t)^{\top}(\vec{J_{c}}(\theta_t)\vec{J_{c}}(\theta_t)^{\top})^{-1}\vec{c}(\theta_{t}).
+\mathcal{I}_2(\theta_t) &= \mathbf{J_{c}}(\theta_t)^{\top}(\mathbf{J_{c}}(\theta_t)\mathbf{J_{c}}(\theta_t)^{\top})^{-1}\mathbf{c}(\theta_{t}).
 \end{align}
 \end{subequations}
+One can see that this matches Equation \ref{eq:null_space_geom} exactly, with different learning rates for the gradient in $H_\theta$ and $V_\theta$. 
 
-We make the crucial observation that this update can be reformulated as a least-squares problem:
+\paragraph{Numerical Algorithm:}
+To turn this into a practical algorithm we need to rewrite the above equation in terms of the primitives from \cref{chap:linalg}. We make the crucial observation that the null-space update term can be written as a single least-squares solve:
+
 \begin{subequations}
 \label{eq:local_least_squares}
 \begin{align} 
-\begin{split} 
-&\theta_{t+1} - \theta_t 
-\\ 
-&~= -\arg \min_{\{\delta:~ \vec{J_{c}}(\theta_t)\delta=-\gamma\vec{c}(\theta_{t}) \}} \|\delta - \eta\nabla_{\theta}\mathcal{L}(\theta_t)\|^{2} 
-\end{split} \label{eq:linearized-constraint}\\
+\theta_{t+1} - \theta_t  
+&~= -\arg \min_{\{\delta:~ \mathbf{J_{c}}(\theta_t)\delta=-\gamma\mathbf{c}(\theta_{t}) \}} \|\delta - \eta\nabla_{\theta}\mathcal{L}(\theta_t)\|^{2} 
+ \label{eq:linearized-constraint}\\
 &~= -\eta \nabla_{\theta}\mathcal{L}(\theta_t) 
-    + \texttt{LstSq}\big(\vec{J}_\vec{c}, \eta\vec{J_c}\nabla_{\theta}\mathcal{L} - \gamma\vec{c}, 0\big).
+    + \textsf{LstSq}\big(\mathbf{J}_\mathbf{c}, \eta\mathbf{J_c}\nabla_{\theta}\mathcal{L} - \gamma\mathbf{c}, 0\big).
 \label{equation-affine-trafo-gradient}
 \end{align}
 \end{subequations}
-% \Cref{equation-affine-trafo-gradient} differs from \Cref{eq:constr_lsq_param} in that \Cref{equation-affine-trafo-gradient} includes a bias term in the norm.
-\Cref{sec:weighted-least-squares} explains how to use \texttt{LstSq} for a least-squares problem with a bias term (in other words, how to transition from \Cref{eq:linearized-constraint} to \Cref{equation-affine-trafo-gradient}).
-Crucially, \emph{the transformation of the gradient in \Cref{equation-affine-trafo-gradient} turns any unconstrained optimiser into one for the constrained problem in \Cref{eq:constr_opt_nn}.}
-This is beneficial because state-of-the-art stochastic optimization routines can now be used for solving constrained optimization problems.
+
+This means that with a single line of code change any state-of-the-art stochastic optimization routines can now be used for solving constrained optimization problems.
 We exploit this generality of the null-space method in our code implementation: \Cref{fig:optax_integration} shows that with our library, a few lines of code can turn any of Optax's \citep{deepmind2020jax} gradient transformations into an algorithm for solving constrained optimization problems.
+
 \begin{figure*}[t]
 \begin{center}
 \small
@@ -98,21 +287,7 @@ optim = optax.chain(transform,  optax.adam(1e-3))  # Use any optax optimizer
 \label{fig:optax_integration}
 \end{figure*}
 
-\citet{yamashita1980differential} shows that under appropriate assumptions,  the null-space method converges to the solution of the constrained optimisation problem and that it has a quadratic rate of convergence. 
-\begin{figure}[t]
-\centering
- \includegraphics[width=0.75\columnwidth]{figures/figure5_updated_new.pdf}
-\caption{SGD \& penalty method fails the constraint, unlike the null-space method.}
-\label{figure:combined_optimizers_plot}
-\end{figure}
-To make such results accessible to a more general audience,
-\Cref{section-convergence-null-space-method} \emph{provides a new proof} of convergence. 
-As for a geometric interpretation, constrained optimisation can be thought of as optimisation on a manifold \citep{boumal2023introduction}. 
-Using this perspective, null-space-method steps can then be viewed as Riemannian gradient steps with the projection onto the tangent space as approximate exponential maps.
-\Cref{sec:geometric_interpretation} explains this \textit{new interpretation of the null-space method using differential geometry}. 
-
-% \textbf{Related work on constrained optimization:} 
-Classical methods for constrained optimisation include penalty methods, Lagrangian methods, and projected gradient descent \citep{nocedal1999numerical}. 
+\paragraph{Related Works:}Classical methods for constrained optimisation include penalty methods, Lagrangian methods, and projected gradient descent \citep{nocedal1999numerical}. 
 % \begin{itemize} 
 % \item 
 Penalty methods 
@@ -122,39 +297,148 @@ turn a constrained problem into an unconstrained one by adding a penalty term to
 Another approach to constrained optimisation is to optimise an (augmented) Lagrangian.
 However, this requires finding saddle points rather than minima, which complicates the use of typical gradient-based (stochastic) optimisation routines, leading to intricate update schemes that can be difficult to tune \citep{alma991013887829703276}. 
 % \item 
-Finally, projected gradient descent (PGD) is an iterative method that alternates between a standard gradient update on the task loss and a projection step onto the feasible set defined by $\vec{c}(\vec{\theta})=\vec{0}$. While conceptually straightforward, the projection step is computationally expensive or analytically intractable for most constraints. Thus, PGD is often limited to simple problems, and does not generalise to the applications we demonstrate in \Cref{sec:demonstrations}. 
+Finally, projected gradient descent (PGD) is an iterative method that alternates between a standard gradient update on the task loss and a projection step onto the feasible set defined by $\mathbf{c}(\mathbf{\theta})=\mathbf{0}$. While conceptually straightforward, the projection step is computationally expensive or analytically intractable for most constraints. Thus, PGD is often limited to simple problems, and does not generalise to the applications we demonstrate in \Cref{sec:constr_experiments}. 
 % \end{itemize}
+\begin{table}[t]
+    \caption{Key properties of various constrained optimisation algorithms. ``NSM'':``Null-space method''. PGD: ``Projected gradient descent.''
+    }
+    \centering 
+    % \vskip0.15in
+    \begin{small}
+    % \begin{sc}
+    % \resizebox{\columnwidth}{!}{%
+    \begin{tabular}{l c c c c}
+     \toprule
+     & NSM & Penalty & Lagr.  & PGD \\
+     \midrule
+     KKT &  \color{green!50!black} \cmark & \color{red} \xmark & \color{green!50!black} \cmark & \color{green!50!black} \cmark \\
+     No saddle pts. & \color{green!50!black} \cmark & \color{green!50!black} \cmark & \color{red} \xmark & \color{green!50!black} \cmark \\
+     Any constraint & \color{green!50!black} \cmark & \color{green!50!black} \cmark & \color{green!50!black} \cmark & \color{red} \xmark\\
+     \bottomrule
+    \end{tabular}
+    % }
+    % \end{sc}
+    \end{small}
+    \label{tab:summary_of_competitors}
+\end{table}
 
 % \clearpage 
 Recent works that tackle constrained optimisation for neural networks have combined one of the aforementioned classical methods with certain approximations. \citet{gallego2022controlled} find a saddle point of the Lagrangian by doing gradient descent on the neural network parameters and gradient ascent on the Lagrange multiplier. \citet{donti2021dc3} propose a framework for constrained optimisation, which is equivalent to an approximate projected gradient descent scheme. 
 Our use of the null-space method is the first of its kind in a deep learning setting and is generally novel in combination with numerical least squares. 
 
 
-\subsection{Constrained Optimization}
+\begin{table*}[t]
+\caption{Comparing the null-space method with baselines on $C_4$ and $O(3)$ equivariance. Test error (accuracy and mean-square error) and constraint violation. Lower is better.}
+\vspace{-3mm}
+\label{tab:equiv_invariance_results}
+% \vskip 0.15in
+\begin{center}
+\begin{small}
+% \begin{sc}
+\begin{tabular}{l l l c c c}
+\toprule
+Structure & Task & Method & Test Error ($\downarrow$) & Constraint Violation ($\downarrow$) \\
+\midrule
+$C_4$ Equiv. & FMNIST & Baseline & $\mathbf{0.105 \pm 0.004}$ & $743.51\pm141.65$ \\
+$C_4$ Equiv. & FMNIST & Null-space (ours) & $0.147 \pm 0.004$ & $\mathbf{0.27\pm0.12}$ \\
+\midrule
+$O(3)$ Equiv. & From \citep{finzi2021practical} & Data augm.\@ (baseline) & $0.13 \pm 0.01$ & $0.36 \pm 0.01$ \\
+$O(3)$ Equiv. & From \citep{finzi2021practical} & Null-space (ours) & $\mathbf{0.11 \pm 0.01}$ & $\mathbf{0.18 \pm 0.01}$ \\
+\bottomrule
+\end{tabular}
+% \end{sc}
+\end{small}
+\end{center}
+% \vskip -0.1in
+\end{table*}
+
+
+% Table 3
+\begin{table*}[t]
+\caption{Test accuracy (\%) for models trained to target $\ell_0$ sparsity. Higher is better.}
+\vspace{-3mm}
+\begin{center}
+\small
+\label{tab:l0_sparsity_results}
+\begin{tabular}{l l l c}
+\toprule
+Model & Dataset & Method & Test accuracy (\%, $\uparrow$) \\
+\midrule
+\multirow{2}{*}{ResNet-18} & \multirow{2}{*}{CIFAR-10 (90\% Sparsity)} & Magnitude pruning (baseline) & $0.6830 \pm 0.0139$ \\
+& & Constrained $\ell_0$ (ours) & $\mathbf{0.7825 \pm 0.0015}$ \\
+\midrule
+\multirow{2}{*}{ResNet-18} & \multirow{2}{*}{SVHN (90\% Sparsity)} & Magnitude pruning (baseline) & $0.7987 \pm 0.0273$ \\
+& & Constrained $\ell_0$ (ours) & $\mathbf{0.9150 \pm 0.0025}$ \\
+\midrule
+
+\multirow{2}{*}{SWIN-S} & \multirow{2}{*}{ImageNet (50\% Sparsity)} & Magnitude pruning (baseline) & $0.468$ \\
+& & Constrained $\ell_0$ (ours) & $\mathbf{0.498}$ \\
+\bottomrule
+\end{tabular}
+
+\end{center}
+\end{table*}
+
+
+% Table 4: Spanning
+\begin{table*} %[t]
+\caption{Comparing the null-space method, USBMs, and QCSBM on three datasets: 8-Gaussian, Spirals, and Checkerboard. NLL is measured in bits/dimension. Lower is better.}
+\vspace{-3mm}
+\label{tab:conservative_sbm_results}
+% \vskip 0.15in
+\begin{center}
+\begin{small}
+\begin{tabular}{lcccc}
+\toprule
+ Dataset/Model & Asym ($\downarrow$) & NAsym ($\downarrow$) & Score Error ($\downarrow$) & NLL ($\downarrow$)  \\
+\midrule
+\textbf{8-Gaussian} \\
+Null-Space & $\mathbf{2.66 \pm 1.34 \cdot 10^{-3}}$  & $\mathbf{3.20 \pm 1.47 \cdot 10^{-4}}$  & $1.52 \pm 0.08 $ & $\mathbf{3.70 \pm 0.03} $  \\
+USBM &  $2.38\pm0.25 \cdot 10^{-2}$  & $3.74 \pm 0.09 \cdot 10^{-3}$ & $1.50 \pm 0.06$ & $3.79 \pm 0.09 $  \\
+QCSBM & $6.96 \pm 1.20 \cdot 10^{-3}$ & $1.39 \pm 0.06 \cdot 10^{-3}$ & $\mathbf{1.49 \pm 0.05} $ &  $3.74 \pm 0.07 $ \\
+\midrule
+\textbf{Spirals} \\
+Null-Space & $\mathbf{3.37 \pm 0.10 \cdot 10^{-3}}$ & $\mathbf{1.21 \pm 0.07 \cdot 10^{-3}}$ & $1.63 \pm 0.08$ & $\mathbf{3.53 \pm 0.15}$  \\
+USBM & $6.68 \pm 3.48 \cdot 10^{-1}$ & $ 3.43 \pm 0.78 \cdot 10^{-2}$ & $1.57 \pm 0.07$ & $4.11 \pm 0.01$  \\
+QCSBM & $5.13 \pm 1.55 \cdot 10^{-2}$ & $9.43 \pm 0.44 \cdot 10^{-3}$ & $\mathbf{1.53 \pm 0.04 }$ & $4.02 \pm 0.05 $  \\
+\midrule
+\textbf{Checkerboard} \\
+Null-Space & $\mathbf{4.26 \pm 2.35 \cdot 10^{-3}}$  & $\mathbf{9.87 \pm 5.21 \cdot 10^{-4}}$ & $1.65 \pm 0.09 $ & $\mathbf{3.69 \pm 0.05 }$ \\
+USBM & $9.15 \pm 1.10 \cdot 10^{-2}$ & $1.91 \pm 0.16 \cdot 10^{-2}$ & $1.65 \pm 0.09$  & $3.74 \pm 0.07$ \\
+QCSBM & $2.17 \pm 0.26 \cdot 10^{-2}$ & $5.86 \pm 0.52 \cdot 10^{-3}$ & $\mathbf{1.64 \pm 0.04 }$ & $3.76 \pm 0.01 $ \\
+\bottomrule
+\end{tabular}
+\end{small}
+\end{center}
+% \vskip -0.1in
+\end{table*}
+
+\section{Demonstrations}
+\label{sec:constr_experiments}
 Next, we demonstrate the capabilities of the null-space method using various practical constraints. 
 The focal points are, next to good performance, versatility, and ease of application; thus, the benchmarks below prefer baselines that are typical to each constraint over those that are carefully-tuned state-of-the-art implementations.
 To make things fair, we use equally little fine-tuning for our approach -- the results are surprisingly strong. 
-We anticipate that domain-specific optimisations could further enhance performance and scalability in each application. Precise setups for all experiments are in \Cref{sec:experimental-details}.
+We anticipate that domain-specific optimisations could further enhance performance and scalability in each application. 
 
 \textbf{Enforcing equivariance:~~}
 % \label{sec: equivariance_expts}
 The null-space method enables the enforcement of complex functional properties like equivariance and invariance directly during training, without the need for bespoke architectures. These properties act as powerful structural priors, guiding the model to learn representations that respect known symmetries or are robust to specific nuisance transformations in the input data.
 
-\textit{Rotation Equivariance:} We enforce $C_4$ rotational equivariance \citep{cohen2016group} on the convolutional layers of a LeNet \citep{726791} model trained on FMNIST \citep{xiao2017fashion}. The constraint $\vec{c}(\vec{\theta})$ minimises the difference between final feature maps resulting from rotating the input image and rotating the final output feature maps, ensuring the learned filters respect $C_4$ rotational symmetry (i.e., $f(R\vec{x}; \vec{\theta}) - R f(\vec{x}; \vec{\theta}) = \vec{0}$ for $C_4$ rotation $R$). The results in \Cref{tab:equiv_invariance_results} show that the null-space method balances the task loss and constraint satisfaction: it achieves slightly lower test accuracy compared to ``ordinarily trained'' models but exhibits vastly superior satisfaction of $C_4$ equivariance.
+\textit{Rotation Equivariance:} We enforce $C_4$ rotational equivariance \citep{cohen2016group} on the convolutional layers of a LeNet \citep{726791} model trained on FMNIST \citep{xiao2017fashion}. The constraint $\mathbf{c}(\mathbf{\theta})$ minimises the difference between final feature maps resulting from rotating the input image and rotating the final output feature maps, ensuring the learned filters respect $C_4$ rotational symmetry (i.e., $f(R\mathbf{x}; \mathbf{\theta}) - R f(\mathbf{x}; \mathbf{\theta}) = \mathbf{0}$ for $C_4$ rotation $R$). The results in \Cref{tab:equiv_invariance_results} show that the null-space method balances the task loss and constraint satisfaction: it achieves slightly lower test accuracy compared to ``ordinarily trained'' models but exhibits vastly superior satisfaction of $C_4$ equivariance.
 
 \textit{$O(3)$ Equivariance:}
-A key strength of our null-space method is its ability to impose complex group equivariances by changing just a few lines of code to define the constraint. We demonstrate this by enforcing $O(3)$ equivariance on the task of predicting the moment of inertia for particle systems \citep{finzi2021practical}. We randomly sample transformations $R\in O(3)$ and the constraint $f(R\vec{x}; \vec{\theta}) - R^\top f(\vec{x} ; \vec{\theta}) R = \vec{0}$.
+A key strength of our null-space method is its ability to impose complex group equivariances by changing just a few lines of code to define the constraint. We demonstrate this by enforcing $O(3)$ equivariance on the task of predicting the moment of inertia for particle systems \citep{finzi2021practical}. We randomly sample transformations $R\in O(3)$ and the constraint $f(R\mathbf{x}; \mathbf{\theta}) - R^\top f(\mathbf{x} ; \mathbf{\theta}) R = \mathbf{0}$.
 Then, we benchmark our null-space method against a baseline that uses $O(3)$ data augmentation. Performance is evaluated on a test dataset by measuring the mean squared error (MSE) on a test set and the $O(3)$ equivariance constraint violation (\Cref{tab:equiv_invariance_results}). The null-space method outperforms data augmentation in both metrics.
 
 \textbf{Enforcing $\ell_0$ sparsity:~~}
 % \label{sec:l0_sparsity}
 Enforcing a specific $\ell_0$ sparsity level during training can be achieved using learnable stochastic masks \citep{louizos2017learning, gallego2022controlled}. 
-We optimise mask-probabilities $\mathbf{p}$ alongside model weights $\vec{\theta}$, and sample masks from a Bernoulli distribution, using \citet{yin2019understanding}'s straight-through estimator for $\mathbf{p}$'s gradients derived from the task loss. Our constrained optimization method is applied to $\mathbf{p}$ via a constraint $c(\mathbf{p}) = \frac{1}{N_p} \sum_{i=1}^{N_p} p_i - s_{\text{target}} = 0$, where $N_p$ is the total number of parameters, which drives the expected proportion of active weights towards a target sparsity level $s_{\text{target}}$.
+We optimise mask-probabilities $\mathbf{p}$ alongside model weights $\mathbf{\theta}$, and sample masks from a Bernoulli distribution, using \citet{yin2019understanding}'s straight-through estimator for $\mathbf{p}$'s gradients derived from the task loss. Our constrained optimization method is applied to $\mathbf{p}$ via a constraint $c(\mathbf{p}) = \frac{1}{N_p} \sum_{i=1}^{N_p} p_i - s_{\text{target}} = 0$, where $N_p$ is the total number of parameters, which drives the expected proportion of active weights towards a target sparsity level $s_{\text{target}}$.
 We apply this method to train ResNet-18 \citep{he2016deep} on CIFAR-10 \citep{krizhevsky2009learning} (target $s_{\text{target}}=0.1$, i.e., 90\% sparsity) and SWIN-S \citep{liu2021swin} on ImageNet \citep{deng2009imagenet, russakovsky2015imagenet} (target $s_{\text{target}}=0.5$, i.e., 50\% sparsity). We compare against one-shot magnitude pruning~\citep{lee2024jaxpruner} as a baseline. \Cref{tab:l0_sparsity_results} shows that the null-space method achieves better test accuracies than magnitude pruning.
 
 \textbf{Conservative property of score-based generative models:~~}
 % \label{sec:conservative}
-Score-based generative models learn the score function $\vec{s}(\vec{x}; \vec{\theta}) = \nabla_{\vec{x}} \log p_d(\vec{x})$, where $p_d(\vec{x})$ is the data distribution. For $\vec{s}$ to be a valid score function, it must be a conservative vector field, implying its Jacobian must be symmetric, $\vec{J}(\vec{s}) - \vec{J}(\vec{s})^\top = \vec{0}$; see \citep{chao2022investigating} for details. We apply the null-space method to enforce this conservativeness constraint $\vec{c}(\vec{\theta}) = ||\vec{J}(\vec{s}) - \vec{J}(\vec{s})^\top||_F^2 = 0$ during training. This encourages score-based models that are both architecturally flexible and theoretically sound.
+Score-based generative models learn the score function $\mathbf{s}(\mathbf{x}; \mathbf{\theta}) = \nabla_{\mathbf{x}} \log p_d(\mathbf{x})$, where $p_d(\mathbf{x})$ is the data distribution. For $\mathbf{s}$ to be a valid score function, it must be a conservative vector field, implying its Jacobian must be symmetric, $\mathbf{J}(\mathbf{s}) - \mathbf{J}(\mathbf{s})^\top = \mathbf{0}$; see \citep{chao2022investigating} for details. We apply the null-space method to enforce this conservativeness constraint $\mathbf{c}(\mathbf{\theta}) = ||\mathbf{J}(\mathbf{s}) - \mathbf{J}(\mathbf{s})^\top||_F^2 = 0$ during training. This encourages score-based models that are both architecturally flexible and theoretically sound.
 We compare our null-space method to typical unconstrained score-based models (USBMs) and \citet{chao2022investigating}'s quasi-conservative score-based models (QCSBM) on various synthetic 2D datasets. The performance is evaluated via asymmetry (Asym), normalised asymmetry (NAsym), score error, and negative log-likelihood (NLL). The results in \Cref{tab:conservative_sbm_results} show that the null-space method outperforms the baselines by achieving the best NLL and a stricter enforcement of conservativeness.
 
 % \section{Limitations and future work}

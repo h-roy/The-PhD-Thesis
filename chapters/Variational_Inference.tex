@@ -1,7 +1,5 @@
 \chapter{Variational Inference}
 \label{chap:vi}
-
-% --- FALLBACK MACROS TO FIX COMPILATION FAILURES ---
 \makeatletter
 \providecommand{\N}{\mathcal{N}}
 \providecommand{\bvec}[1]{\bm{#1}}
@@ -26,9 +24,8 @@
   \IfFileExists{#2}{\includegraphics[#1]{#2}}{\fbox{Missing: #2}}%
 }
 \providecommand{\brackleft}[1]{\hspace{#1}}
-\providecommand{\brackright}[1]{\hspace{#1}}\providecommand{\stddev}[1]{\ensuremath{\pm #1}}
-\providecommand{\im}{\textrm{im}}
-\providecommand{\ker}{\textrm{ker}}
+\providecommand{\brackright}[1]{\hspace{#1}}
+\providecommand{\im}{\operatorname{im}}
 
 % Algorithms (for the VIKING pseudocode in Variational_Inference.tex)
 \SetCommentSty{emph}
@@ -39,49 +36,115 @@
 \noindent
 \textbf{Key points (Chapter~\ref{chap:vi}).}
 \begin{enumerate}\setlength{\itemsep}{2pt}
-  \item \textbf{The dataset-restricted model map.}
+  \item \textbf{A geometry-aware variational family.}
+  VIKING uses a Gaussian variational family whose covariance is split into kernel (prediction-preserving / vertical) and image (prediction-changing / horizontal) components, matching the parameter-space decomposition developed in Chapters~\ref{chap:setting} and~\ref{chap:linalg}.
+
+  \item \textbf{Only two variance scales, but fully correlated structure.}
+  The approximate posterior uses two scalar variances---one on the kernel and one on the image---while remaining fully correlated through the projection operators.
+
+  \item \textbf{Empirical behavior mirrors the geometric picture.}
+  The ablations and benchmarks show that respecting overparameterization improves uncertainty estimates, calibration, and OOD behavior while scaling to large modern models.
 \end{enumerate}
 \end{keypointsbox}
 
 \begin{center}
 \begin{minipage}{0.95\linewidth}
-\noindent\textbf{Chapter \thechapter\ -- Geometric Computations via Matrix-Free Linear Algebra:}\par\vspace{3pt}
+\noindent\textbf{Chapter \thechapter\ -- Variational Inference:}\par\vspace{3pt}
 
 \begin{tabular}{@{}p{0.83\linewidth}r@{}}
-\hyperref[sec:bridge_dg_la]{\thechapter.1\;\;From Geometry to Linear Algebra} \dotfill & \pageref{sec:bridge_dg_la}\\
-\hyperref[sec:la_computations]{\thechapter.2\;\;Efficient Linear Algebra for Deep Learning} \dotfill & \pageref{sec:la_computations}\\
+\hyperref[sec:kivi]{\thechapter.1\;\;VIKING: geometry-aware variational inference with stochastic projections} \dotfill & \pageref{sec:kivi}\\
+\hyperref[sec:experiments]{\thechapter.2\;\;Experiments} \dotfill & \pageref{sec:experiments}\\
 \end{tabular}
 \end{minipage}
 \end{center}
 
 
+
+
 \noindent
-In the previous chapter, we explored the parameter space geometry of models in Bayesian Deep Learning.
-However, to accomplish anything of practical significance, we need to be able to compute geometric quantities on this manifold.
-At first inspection, this task might seem completely hopeless. The parameter space is a $D$-dimensional manifold, where $D$ is the number of parameters, which can be at the order of billions.
-However, as we will show in this chapter, the decomposition of the tangent space of the manifold into the kernel and image can make various computations tractable.
-In this chapter, we will begin with a brief recap of the parameter space geometry derived from the previous chapter.
-We will then proceed to show how this geometry affects the computation of various geometric quantities that live on this manifold, and finally, how they mostly translate to well-known linear algebra problems.
-Finally, we will develop linear algebra algorithms that can scale to large models.
+So far, we have been applying the geometry of the parameter space from \cref{chap:setting} primarily to Laplace approximations. In this chapter, we will consider the implications of the geometric analysis for Variational Inference in overparameterized deep neural networks.  
+
+
+Variational mean field approximations tend to struggle with contemporary overparametrized deep neural networks.
+Where a Bayesian treatment is usually associated with high-quality predictions and uncertainties, the practical reality has been the opposite, with unstable training, poor predictive power, and subpar calibration.
+Building upon analysis of reparametrizations of neural networks from \cref{chap:setting} and \cref{ch:laplace}, we propose a simple variational family that considers two independent linear subspaces of the parameter space.
+These represent functional changes inside and outside the support of training data.
+This allows us to build a fully-correlated approximate posterior reflecting the overparametrization that tunes easy-to-interpret hyperparameters. We develop scalable numerical routines that maximize the associated evidence lower bound (ELBO) and sample from the approximate posterior by adapting the primitives discussed in \cref{chap:linalg}.
+Empirically, we observe state-of-the-art performance across tasks, models, and datasets compared to a wide array of baseline methods. Our results show that approximate Bayesian inference applied to deep neural networks is far from a lost cause when constructing inference mechanisms that reflect the geometry of reparametrizations.
+
 
 \section{VIKING: \underline{V}ariational \underline{I}nference with \underline{K}ernel- and \underline{I}mage-spaces of \underline{n}umerical \underline{G}auss--Newton matrices}
 \label{sec:kivi}
-We next build a variational training loop designed with overparametrization in mind.
-We start from the ever-present prior $p(\bvec{\theta}) = \N(\bvec{\theta} | \vec{0}, \alpha^{\scriptscriptstyle{-1}} \mathbb{I})$ over parameters $\bvec{\theta} \in \R^D$, with precision $\alpha \in \R$.
-As motivated earlier, we choose a variational family $q(\bvec{\theta})$ that is linked to the kernel of an empirical estimate of the Fisher--Rao (FR) metric at $\hat{\bvec{\theta}}$, denoted $\ker(\mathcal{F}_{\hat{\bvec{\theta}}}) \subset \R^D$.
-Specifically,
+We build a variational training loop designed with overparametrization in mind. As in earlier chapters, let the parameter space be $\Theta=\R^P$ and let $\hat{\bvec{\theta}}\in\Theta$ denote the current variational mean and consider the ever-present prior $p(\bvec{\theta}) = \N(\bvec{\theta} | \mathbf{0}, \alpha^{\scriptscriptstyle{-1}} \mathbb{I})$ over parameters, with precision $\alpha \in \R$.
+
+The geometric construction from Chapter~\ref{chap:setting} suggests splitting uncertainty according to the local decomposition
+\(
+T_{\hat{\bvec{\theta}}}\Theta = H_{\hat{\bvec{\theta}}}\oplus V_{\hat{\bvec{\theta}}}
+\),
+where \(V_{\hat{\bvec{\theta}}}\) is the prediction-preserving (kernel) subspace and \(H_{\hat{\bvec{\theta}}}\) its complementary prediction-changing (image) subspace.
+Specifically, we use the Gaussian variational family
+
 \begin{align}
   \label{eq:approximate-posterior}
-  q(\bvec{\theta}) = \N(\bvec{\theta} | \hat{\bvec{\theta}}, \mat{\Sigma}_{\hat{\bvec{\theta}}}) 
-  , \quad
-    \mat{\Sigma}_{\hat{\bvec{\theta}}}    = \sigma_{\ker}^2 \UUthetahat + \sigma_{\im}^2 (\mathbb{I} - \UUthetahat).
+  q(\bvec{\theta})
+  &=
+  \N(\bvec{\theta}\mid \hat{\bvec{\theta}}, \mat{\Sigma}_{\hat{\bvec{\theta}}}),
+  \\
+  \mat{\Sigma}_{\hat{\bvec{\theta}}}
+  &=
+  \sigma_{\ker}^2 \UUthetahat + \sigma_{\im}^2 (\mathbb{I} - \UUthetahat),
 \end{align}
-Here, $\mat{U}_{\hat{\bvec{\theta}}} \in \R^{D \times R}$ is a $R$-dimensional basis of the kernel, such that $\UUthetahat$ is a projection matrix that maps parameter vectors in $\R^D$ to the linear subspace $\ker(\mathcal{F}_{\hat{\bvec{\theta}}})$.
-In other words, for any $\vec{v} \in \R^D$ we have $\UUthetahat \vec{v} \in \ker(\mathcal{F}_{\hat{\bvec{\theta}}})$, wherein the model's loss is unchanged at the data used to estimate the FR.
-\looseness=-1
+
+where \(\mat{U}_{\hat{\bvec{\theta}}}\in\R^{P\times R}\) has orthonormal columns spanning the chosen kernel subspace of the per-datum loss-gradients(same as \cref{ch:laplace_null}), and hence
+\(
+\UUthetahat=\mat{U}_{\hat{\bvec{\theta}}}\mat{U}_{\hat{\bvec{\theta}}}^{\top}
+\)
+is the orthogonal projector onto that subspace.
+Thus, \(\UUthetahat\) plays the role of a finite-dimensional projector onto \(V_{\hat{\bvec{\theta}}}\) (cf.\ \(\textsf{Proj}_V\) in Chapter~\ref{chap:linalg}), while \(\mathbb{I}-\UUthetahat\) projects onto the complementary image/horizontal subspace.
+
 
 This proposed approximate posterior is perhaps the simplest possible choice that is adapted to overparametrized models: it has one scalar parameter, $\sigma_{\im}^2 \in \R_+$, that influences the predictive uncertainty on the training data, and another scalar parameter $\sigma_{\ker}^2 \in \R_+$ that reflects uncertainty elsewhere.
-Arguably, it is overly simplistic to calibrate a neural network through two scalars, but we will see that it is surprisingly competitive, suggesting that explicitly reflecting overparametrization is important in Bayesian approximations.
+Arguably, it is overly simplistic to calibrate a neural network through two scalars, but we will see that it is surprisingly competitive, suggesting that explicitly reflecting overparametrization is important in Bayesian approximations. Note that despite having only two parameters, the covariance remains \emph{fully correlated} because the correlation structure is induced by the projection operators.
+
+
+\subsection{The VIKING ELBO}
+
+To estimate \(q(\bvec{\theta})\), we maximize the usual evidence lower bound (ELBO), denoted \(\mathcal L\), for the likelihood \(p(\y\mid \bvec{\theta},\x)\)
+\begin{align}
+  \label{eq:elbo}
+  \mathcal{L}(\hat{\bvec{\theta}}, \sigma_{\ker}, \sigma_{\im})
+    &= \mathbb{E}_{\bvec{\theta} \sim q}\left[ \log p(\y | \bvec{\theta}, \x) \right]
+     - \mathrm{KL}( q(\bvec{\theta}) \| p(\bvec{\theta}) ),
+\end{align}
+where $\mathrm{KL}$ denotes the Kullback-Leibler divergence.
+We call the result \emph{Variational Inference with Kernel- and Image-spaces of numerical Gauss--Newton matrices (VIKING)}.
+The overall algorithmic steps involved in our method are summarized in \Cref{alg:viking}.
+We refer to the two terms of the ELBO as the \emph{reconstruction term} and the \emph{KL term}, respectively, and discuss their evaluation in what follows.
+
+\paragraph{The reconstruction term.}
+Recall that access to a matrix-free routine for approximately applying the kernel projector \(\UUthetahat\) to any vector \(\bvec{v}\in\R^P\) corresponds to the projection primitive $\textsf{Proj}_V$ from \cref{sec:subspace_projections}.
+
+(Equivalently, we can approximately compute the vertical component of a tangent vector at \(\hat{\bvec{\theta}}\).)
+For \(s=1,\ldots,S\), the reconstruction term is then estimated using the standard reparameterization trick as
+\begin{align}
+  \bvec{\epsilon}^{(s)}   &\sim \N(0, \mathbb{I})
+                   & \in \R^P, \\
+  \text{(projection onto kernel space)} \quad
+  \bvec{\epsilon}_{\ker}^{(s)} &= \UUthetahat \bvec{\epsilon}^{(s)} = \textsf{Proj}_V(\hat{\bvec{\theta}}, \bvec{\epsilon}^{(s)})
+                   & \in \R^P, \label{eq:kernel-projection}\\
+  \text{(image space is orthogonal)} \quad
+  \bvec{\epsilon}_{\im}^{(s)} &= (\mathbb{I} - \UUthetahat) \bvec{\epsilon}^{(s)} = \bvec{\epsilon}^{(s)} - \bvec{\epsilon}_{\ker}^{(s)}
+                   & \in \R^P, \\
+  \bvec{\theta}^{(s)}     &= \hat{\bvec{\theta}} + \sigma_{\ker} \bvec{\epsilon}_{\ker}^{(s)} + \sigma_{\im} \bvec{\epsilon}_{\im}^{(s)}
+                   & \in \R^P, \\
+  \bvec{\theta}^{(s)}     &= \hat{\bvec{\theta}} + \sigma_{\ker} \textsf{Proj}_V(\hat{\bvec{\theta}} ,\epsilon^{(s)}) + \sigma_{\im}  \textsf{Proj}_H(\hat{\bvec{\theta}} ,\epsilon^{(s)})
+                   & \in \R^P, \\
+  \mathbb{E}_{\bvec{\theta} \sim q}\left[ \log p(\y | \bvec{\theta}, \x) \right]
+                   &\approx \frac{1}{S} \sum_{s=1}^S \log p(\y | \bvec{\theta}^{(s)}, \x)
+                   & \in \R\phantom{^P} \label{eq:elbo-expectation}.
+\end{align}
+Here, \Cref{eq:kernel-projection} requires careful computation, to be addressed later.
+Once $\bvec{\epsilon}_{\ker}^{(s)}$ is computed, obtaining a sample $\bvec{\theta}^{(s)}$ from the approximate posterior is trivial.
 
 \begin{algorithm}[t]
   \caption{The VIKING algorithm}
@@ -91,7 +154,7 @@ Arguably, it is overly simplistic to calibrate a neural network through two scal
   \ENSURE Optimized values of $(\hat{\bvec{\theta}}, \sigma_{\ker}, \sigma_{\im})$, representing $q(\bvec{\theta})$ (\Cref{eq:approximate-posterior})
   \FOR{each epoch}
     \FOR{each Monte Carlo sample $s = 1$ to $S$}
-      \STATE Take $\bvec{\epsilon}^{(s, 0)} \sim \mathcal{N}(\vec{0}, \mathbb{I})$
+      \STATE Take $\bvec{\epsilon}^{(s, 0)} \sim \mathcal{N}(\mathbf{0}, \mathbb{I})$
       \FOR{each mini-batch $t = 1$ to $B$}
         \STATE Compute $\bvec{\epsilon}^{(s, t)}$ from $\bvec{\epsilon}^{(s, t-1)}$ (\Cref{eq:normaleq-initial}) \COMMENT{Alternating projections}
       \ENDFOR
@@ -108,41 +171,6 @@ Arguably, it is overly simplistic to calibrate a neural network through two scal
   \ENDFOR
   \end{algorithmic}
 \end{algorithm}
-
-\subsection{The VIKING ELBO}
-
-To estimate $q(\bvec{\theta})$, we maximize the usual (variational) lower bound $\mathcal{L}$ of the likelihood $p(\vec{y} | \bvec{\theta}, \x)$
-\begin{align}
-  \label{eq:elbo}
-  \mathcal{L}(\hat{\bvec{\theta}}, \sigma_{\ker}, \sigma_{\im})
-    &= \mathbb{E}_{\bvec{\theta} \sim q}\left[ \log p(\y | \bvec{\theta}, \x) \right]
-     - \mathrm{KL}( q(\bvec{\theta}) \| p(\bvec{\theta}) ),
-\end{align}
-where $\mathrm{KL}$ denotes the Kullback-Leibler divergence.
-We call the result \emph{Variational Inference with Kernel- and Image-spaces of numerical Gauss--Newton matrices (VIKING)}.
-The overall algorithmic steps involved in our method are summarized in \Cref{alg:viking}.
-We refer to the two terms of the ELBO as the \emph{reconstruction term} and the \emph{KL term}, respectively, and discuss their evaluation in what follows.
-
-\paragraph{The reconstruction term.}
-Assume access to an algorithm to approximate products between the projection matrix $\UUthetahat$ and any vector $\vec{v} \in \R^D$.
-For $s = 1, \ldots, S$, we can then estimate of the reconstruction term as
-\begin{align}
-  \bvec{\epsilon}^{(s)}   &\sim \N(0, \mathbb{I})
-                   & \in \R^D, \\
-  \text{(projection onto kernel space)} \quad
-  \bvec{\epsilon}_{\ker}^{(s)} &= \UUthetahat \bvec{\epsilon}^{(s)}
-                   & \in \R^D, \label{eq:kernel-projection}\\
-  \text{(image space is orthogonal)} \quad
-  \bvec{\epsilon}_{\im}^{(s)} &= (\mathbb{I} - \UUthetahat) \bvec{\epsilon}^{(s)} = \bvec{\epsilon}^{(s)} - \bvec{\epsilon}_{\ker}^{(s)}
-                   & \in \R^D, \\
-  \bvec{\theta}^{(s)}     &= \hat{\bvec{\theta}} + \sigma_{\ker} \bvec{\epsilon}_{\ker}^{(s)} + \sigma_{\im} \bvec{\epsilon}_{\im}^{(s)}
-                   & \in \R^D, \\
-  \mathbb{E}_{\bvec{\theta} \sim q}\left[ \log p(\y | \bvec{\theta}, \x) \right]
-                   &\approx \frac{1}{S} \sum_{s=1}^S \log p(\y | \bvec{\theta}^{(s)}, \x)
-                   & \in \R\phantom{^D} \label{eq:elbo-expectation}.
-\end{align}
-Here, \Cref{eq:kernel-projection} requires careful computation, to be addressed later.
-Once $\bvec{\epsilon}_{\ker}^{(s)}$ is computed, obtaining a sample $\bvec{\theta}^{(s)}$ from the approximate posterior is trivial.
 
 \paragraph{The KL term.}
 Since we have both a Gaussian prior and a Gaussian approximate posterior, we can evaluate the KL term in closed form with
@@ -163,85 +191,41 @@ requiring only an estimate of the kernel dimension $R$ to evaluate the full KL t
 To estimate $R$, we note that $\UUthetahat$ is a projection matrix, i.e., it has $R$ eigenvalues that are 1 while the remaining are 0. Consequently,
 \begin{align}
   R = \trace(\UUthetahat)
-    \approx \frac{1}{S} \sum_{s=1}^S {\bvec{\epsilon}^{(s)}}\T \overbrace{\UUthetahat \bvec{\epsilon}^{(s)}}
-    = \frac{1}{S} \sum_{s=1}^S  {\bvec{\epsilon}^{(s)}}\T \bvec{\epsilon}_{\ker}^{(s)},
+    &\approx \frac{1}{S} \sum_{s=1}^S {\bvec{\epsilon}^{(s)}}\T \UUthetahat \bvec{\epsilon}^{(s)} \\
+    &= \frac{1}{S} \sum_{s=1}^S {\bvec{\epsilon}^{(s)}}\T \overbrace{\textsf{Proj}_V(\hat{\bvec{\theta}}, \bvec{\epsilon}^{(s)}}) = \frac{1}{S} \sum_{s=1}^S  {\bvec{\epsilon}^{(s)}}\T \bvec{\epsilon}_{\ker}^{(s)},
 \end{align}
 where the approximation is Hutchinson's trace estimator \citep{hutchinson1989stochastic}. Note that we may reuse $\bvec{\epsilon}_{\ker}^{(s)}$ (\Cref{eq:kernel-projection}) from the reconstruction term.
 
 \subsection{Kernel projections}\label{sec:kernel-projections}
-At first glance, the ELBO terms (\Cref{eq:elbo-expectation,eq:elbo-kl}) seem straightforward.
-The practical difficulty lies in projecting onto $\ker(\mathcal{F}_{\hat{\bvec{\theta}}})$ as per \Cref{eq:kernel-projection}.
-One noticeable challenge is $\UUthetahat$ having $D \!\times\!D$ entries, where $D$ is the number of model parameters.
-With many modern models having millions or billions of parameters, it is not possible to instantiate this matrix, and we resort to matrix-free algorithms.
+At first glance, the ELBO terms (\Cref{eq:elbo-expectation,eq:elbo-kl}) look straightforward.
+The main practical difficulty is computing the kernel/vertical projection in \Cref{eq:kernel-projection}. 
 
-We start by defining the matrix containing a stack of \emph{per-datum} loss gradients,
+Following the previous chapter, we use a loss-based surrogate for the local Fisher/Gauss--Newton geometry and define the stacked matrix of \emph{per-datum} loss gradients,
 \begin{align}
-\mat{J}_{\hat{\bvec{\theta}}} = \begin{bmatrix}
+\mat{J}^L_{\mathcal D}(\hat{\bvec{\theta}})
+=
+\begin{bmatrix}
     \nabla_{\hat{\bvec{\theta}}} \log p_{\hat{\bvec{\theta}}}(\y_1|\x_1) \\
     \vdots \\
     \nabla_{\hat{\bvec{\theta}}} \log p_{\hat{\bvec{\theta}}}(\y_N|\x_N)
-\end{bmatrix}\in \R^{N \times D}.
+\end{bmatrix}
+\in \R^{N \times P}.
 \end{align}
-This matrix is chosen such that the kernel of $\mat{J}_{\hat{\bvec{\theta}}}\T \mat{J}_{\hat{\bvec{\theta}}}$ estimates the kernel of the Fisher--Rao metric, $\ker(\mathcal{F}_{\hat{\bvec{\theta}}})$ (\Cref{eq:fisher_rao}), as is common practice in Bayesian deep learning \citep{miani2025bayes}.
-For a deeper discussion of the implications of this choice, we refer to \citet{kunstner2019limitations}.
+This makes \(\ker\!\big(\mat{J}_{\mathcal D}(\hat{\bvec{\theta}})\T \mat{J}_{\mathcal D}(\hat{\bvec{\theta}})\big)=\ker\!\big(\mat{J}_{\mathcal D}(\hat{\bvec{\theta}})\big)\)
 
-Projecting onto the kernel of $\mat{J}_{\hat{\bvec{\theta}}}\T \mat{J}_{\hat{\bvec{\theta}}}$ can then be written as a least-squares problem over $\mat{J}_{\hat{\bvec{\theta}}}$,
-\begin{align}\label{eq:normaleq-initial}
-\bvec{\epsilon}_{\ker}^{(s)} = \UUthetahat \bvec{\epsilon}^{(s)} = \arg\min_\vec{u}  \left\{ \|\vec{u} - \boldsymbol{\epsilon}^{(s)} \|^2 ~~\text{subject to}~~ \mat{J}_{\hat{\bvec{\theta}}} \vec{u} = \bvec{0} \right\}.
-\end{align}
-
-Using Lagrange multipliers, we can rewrite the loss in \Cref{eq:normaleq-initial} as
-\begin{align*}
-    \ell(\vec{u}, \bvec{\lambda})
-    = \frac12 \| \vec{u} -  \boldsymbol{\epsilon}^{(s)} \|_2^2 + \bvec{\lambda}\T \mat{J}_{\hat{\bvec{\theta}}} \vec{u} ,
-\end{align*}
-with minima $\boldsymbol{\epsilon}_\text{ker}^{(s)}$ and $\boldsymbol{\lambda}^*$ that satisfy
-\begin{equation}
-    \begin{bmatrix}
-        \mathbb{I} & \mat{J}_{\hat{\bvec{\theta}}}\T \\
-           \mat{J}_{\hat{\bvec{\theta}}} & 0
-    \end{bmatrix}
-    \begin{bmatrix}
-        \boldsymbol{\epsilon}_\text{ker}^{(s)} \\ \bvec{\lambda}^*
-    \end{bmatrix}
-    = \begin{bmatrix}
-        \boldsymbol{\epsilon}^{(s)} \\ 0
-    \end{bmatrix};
-\end{equation}
-more explicitly, the optimal solution is
-\begin{align}
-    \label{eq:normaleq-solution}
-    \bvec{\epsilon}_\text{ker}^{(s)}= \bvec{\epsilon}^{(s)} - \mat{J}_{\hat{\bvec{\theta}}}\T \boldsymbol{\lambda}^* ,
-    \quad 
-    \bvec{\lambda}^* = (\mat{J}_{\hat{\bvec{\theta}}} \mat{J}_{\hat{\bvec{\theta}}}\T)^{-1} \mat{J}_{\hat{\bvec{\theta}}} \bvec{\epsilon}^{(s)}
-\end{align}
-The numerical bottleneck of the projection is thus inverting the matrix $\mat{J}_{\hat{\bvec{\theta}}} \mat{J}_{\hat{\bvec{\theta}}}^{\scriptscriptstyle\top}$.
-We never invert this matrix explicitly, but instead solve the linear system $\mat{J}_{\hat{\bvec{\theta}}} \mat{J}_{\hat{\bvec{\theta}}}^{\scriptscriptstyle\top} \xi = \mat{J}_{\hat{\bvec{\theta}}} \bvec{\epsilon}^{\scriptscriptstyle (s)}$ with the conjugate gradients algorithm \citep{hestenes1952methods}.
-The conjugate gradients algorithm is a matrix-free method, which means that we never materialize the system matrix, and instead, require only matrix-vector products and vector-matrix products, which are accessible with automatic differentiation (since the system matrix consists of stacks per-data gradients).
+Similar to \cref{ch:laplace_null}, efficient projections onto the null-space of this matrix can be done via Alternating Projections (see \cref{sec:subspace_projections}). However, in stochastic variational inference, we replace $\mat{J}^L_{\mathcal D}(\hat{\bvec{\theta}}) \in \R^{|\mathcal D|\times P}$ by the mini-batch gradient stack $\mat{J}^L_{\mathcal B}(\hat{\bvec{\theta}})\in\R^{|\mathcal B|\times P}$. Since $|\mathcal B|$ is usually much smaller than $|\mathcal D|$ we have a much larger class of methods that can be applied to this problem. Given $\bvec{\epsilon}^{(s)}\sim\mathcal N(\bvec{0},\mathbb I)$, recall from \cref{chap:linalg}, we can write the projection as a least-squares problem: $\textsf{Proj}_V(\theta, \bvec{\epsilon}^{(s)}) = \textsf{LstSq}\,\Big(\hat{\bvec{\theta}},\,\mat{J}_{\mathcal B}(\hat{\bvec{\theta}})\bvec{\epsilon}^{(s)}\Big)$. Thus, any of the methods outlined in \cref{tab:summary_of_methods} can be used to apply the $\textsf{Proj}_V$ operator. In the following experiments, we will form normal equations and use the Conjugate Gradients algorithm \citep{hestenes1952methods}. 
 
 Importantly, conjugate-gradient solves can be numerically brittle as they rely on well-conditioned systems.
 This frequently leads to inaccurate projections, in the sense that $\bvec{\epsilon}_{\ker}^{\scriptscriptstyle (s)}$ and $\bvec{\epsilon}_{\im}^{\scriptscriptstyle (s)}$ are not orthogonal, even if they should.
 The solution to this problem is to either precondition the linear system or to improve the numerical robustness of the conjugate gradients method with reorthogonalization -- we found the latter to perform well, thus, all experiments use conjugate gradients with full reorthogonalization \citep{gratton2021minimizing};
 see also \citet{maddox2022low}.
 
+For gradient-based optimization of the ELBO, we need to not only apply the projection operator, $\textsf{Proj}_V$, but also differentiate it. In \cref{subsec:proj_grads} we derived an efficient derivative of the projection operator, by writing it as a least-squares problem, choosing appropriate constraints, and using the method of adjoints to obtain gradients at approximately the same computational and memory cost as the forward pass. This allows us to evaluate and minimize the ELBO.
+
 \subsection{Stochastic alternating projections}
 \label{sec:stochastic-projection}
-The projection algorithm performs most of the computation that eventually gets us samples from the approximate posterior $q(\bvec{\theta})$.
-Unfortunately, following \Cref{eq:normaleq-solution} to project onto the FR kernel requires working with $\mat{J}_{\hat{\bvec{\theta}}} \mat{J}_{\hat{\bvec{\theta}}}^{\scriptscriptstyle\top}$, a $N \!\times\! N$ matrix.
-Recently, \citet{miani2025bayes} proposed a scalable mini-batched algorithm for projecting onto matrix kernels, based on \citeauthor{von1949rings}'s alternating projections (\citeyear{von1949rings}).
-In our setting, this algorithm would iteratively project onto the kernel of batched FR estimates,
-\begin{align}\label{eq:altproj-update}
-    \bvec{\epsilon} \mapsto \UUthetahatt \bvec{\epsilon},
-\end{align}
-where $\bvec{\epsilon}$ is the vector to be projected and $\UUthetahatt$ is the kernel-projection of the $t^{\text{th}}$ batch.
-This process can be shown to converge onto the kernel of the complete-data FR \citep{miani2025bayes}.
-
-Unfortunately, the alternating projections algorithm still requires one or more passes through the entire dataset to project a single vector.
-As we require a sample from the approximate posterior in every optimization step, alternating projections is inapplicable to mini-batched ELBO optimization.
-The fundamental issue is that in each ELBO optimization step, we change the approximate posterior mean $\hat{\bvec{\theta}}$, such that the FR and its kernel also change.
-A naive procedure would draw an initial sample $\bvec{\epsilon}^{(0)} \sim \N(\bvec{0}, \mathbb{I})$, and repeatedly project this onto mini-batch FR kernels throughout ELBO optimization, hoping that the posterior mean changes sufficiently slowly to maintain the properties of kernel samples.
-Empirically, we have not found this to be the case.
-With this in mind, we propose a stochastic extension of the alternating projections algorithm suitable for mini-batched ELBO optimization.
+The analysis in the previous chapters has been mostly focused on the full FR kernel, which requires working with $\mat{J}_{\mathcal D}(\hat{\bvec{\theta}}) $ matrix. In \cref{chap:linalg}
+We studied a scalable mini-batched algorithm for projecting onto matrix kernels, based on \citeauthor{von1949rings}'s alternating projections (\citeyear{von1949rings}). In our setting, we project onto the minibatch FR kernel instead. Thus, it makes sense to incorporate the kernel properties from previously seen mini-batches into each update. With this in mind, we propose a stochastic extension of the alternating projections algorithm suitable for mini-batched ELBO optimization.
 
 Let $\bvec{\epsilon}^{(t)}$ denote a sample in the FR kernel associated with the posterior mean at step $t$ (e.g., one parameter update step).
 We then update the sample as
@@ -253,10 +237,11 @@ We then update the sample as
 \end{align}
 where the hyperparameter $\gamma \in [0, 1]$ controls the noise of this stochastic alternating projection.
 For $\gamma = 1$, we recover the above naive approach that disregards the change in kernel, while for $\gamma = 0$ we merely project onto the kernel of the current batched FR estimate.
-In-between values implement a soft ``sliding window'' along the history of projections, where previous projection information is preserved and then eventually forgotten after a certain number of steps.
+Intermediate values implement a soft ``sliding window'' along the history of projections, where past projection information is partially retained and then gradually forgotten.
 
 \paragraph{What is the effect of additional noise?}
 %
+
 \begin{wrapfigure}[10]{r}{0.37\textwidth}
   \vspace{-2em}
   \begin{center}
@@ -266,7 +251,7 @@ In-between values implement a soft ``sliding window'' along the history of proje
   \caption{Performance of $\gamma$ values.\label{fig:stochastic-projection}}
 \end{wrapfigure}
 %
-Empirically, we find the stochastic extension essential to training models successfully.
+Empirically, we find the stochastic extension essential for stable and effective training.
 In \Cref{fig:stochastic-projection}, we show the accuracy curves over training of a small CNN classifier on Fashion MNIST, with dashed horizontal lines indicating performance on test data.
 The experiment evaluates values of $\gamma$: no noise ($\gamma = 1.0$), only noise ($\gamma = 0.0$), and an in-between choice ($\gamma = 0.5$), as per \Cref{eq:altproj-process}.
 The model without noise quickly achieves the highest training accuracy, but its dependency on the projected samples, which change only once per epoch, leads to a poorer approximate posterior and generalization.
@@ -283,7 +268,7 @@ The model without noise quickly achieves the highest training accuracy, but its 
   \caption{Post-hoc tuning $\sigma_{\ker}, \sigma_{\im}$.\label{fig:posthoc-sigmas}}
 \end{wrapfigure}
 %
-Given the computational effort to evaluate and run the ELBO, it is important to question whether this could be avoided entirely.
+Given the computational cost of ELBO optimization, it is natural to ask whether some of it can be avoided.
 One possibility is to start from a well-performing model, and only use the ELBO to tune the variational parameters $\sigma_{\ker}$ and $\sigma_{\im}$, i.e., post-hoc variational inference with a fixed model.
 This can be efficiently implemented as we only need to project one set of samples, which can be reused throughout optimization.
 With the same experimental setting from before, \Cref{fig:posthoc-sigmas} shows the behavior of such a training procedure.
@@ -291,7 +276,8 @@ Interestingly, post-hoc tuning is not \emph{per se} problematic and indeed leads
 However, the figure shows that optimizing the variational mean with the ELBO improves upon the post-hoc approach.
 
 \paragraph{Warming up as a shortcut.}
-\begin{wrapfigure}[10]{r}{0.37\textwidth}
+
+\begin{wrapfigure}[12]{r}{0.37\textwidth}
   \vspace{-1.0em}
   \begin{center}
     \includegraphics[width=\linewidth]{chapters/ch7_figures/ablation-warmup.pdf}
@@ -302,9 +288,12 @@ However, the figure shows that optimizing the variational mean with the ELBO imp
 As observed, we can still obtain a well-behaved model from the post-hoc tuning procedure.
 Naturally, this informally suggests another way to save computational effort, resources, and time: ``warming up'' the model, first with regular maximum likelihood estimation (or through a pretrained model), and then continuing with ELBO optimization.
 We test this hypothesis experimentally, comparing a model trained from scratch using our ELBO and one that starts with a model first fitted using maximum likelihood (\Cref{fig:ablation-warmup}).
-Our findings are twofold: (i) warmup using maximum likelihood is an effective way to quickstart the ELBO learning process with the ELBO;
+Our findings are twofold: (i) warmup using maximum likelihood is an effective way to initialize and accelerate ELBO optimization;
 (ii) there is a sweet spot where full convergence of a model on maximum likelihood can lead to the ELBO optimization getting stuck.
 We conjecture that this behavior is due to the sharpness of some minima, which negatively affects the evaluation of the expectation term, as it attempts to sample regions of the weight space around the current model weights, which could have drastically different performance, negatively affecting optimization.
+
+
+
 
 \section{Experiments}
 \label{sec:experiments}

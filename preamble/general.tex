@@ -82,10 +82,41 @@
 \usepackage{tikz}
 \usepackage{mdframed}
 \usepackage{multirow}
-
+\usepackage{sidecap}
 % Links
 \usepackage[hyphens]{url}             % Allow hyphens in URL's
 \usepackage[unicode=false,psdextra]{hyperref}                 % References package
+\usepackage{listings}
+\usepackage{textcomp} % Often recommended with listings for specific characters
+% Define Python style for listings
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{1.0,1.0,0.85} % Light yellow background
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{blue}, % Using blue for keywords as green is for comments
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\footnotesize\ttfamily,
+    breakatwhitespace=false,
+    breaklines=true,
+    captionpos=b,
+    keepspaces=true,
+    numbers=none, % Or 'left' if you want line numbers
+    numbersep=5pt,
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    tabsize=2,
+    language=Python,
+    morekeywords={*,...} % Add keywords if needed
+}
+
+\lstset{style=mystyle} % Set the defined style as default
+
 
 % Graphics and colors
 \usepackage{graphicx}                 % Including graphics and using colours
@@ -148,6 +179,10 @@
 \usepackage{tcolorbox} 
 \usepackage{booktabs}
 \usepackage[ruled,vlined,linesnumbered]{algorithm2e}
+\usepackage{thmtools}
+\usepackage{thm-restate}
+\usepackage[table]{xcolor}
+\usepackage{pifont}
 
 \usetikzlibrary{arrows.meta,calc}
 
@@ -165,9 +200,11 @@
 \newtheorem{definition}{Definition}[chapter]
 \newtheorem{assumption}{Assumption}[chapter]
 \newtheorem{theorem}{Theorem}[chapter]
+\newtheorem{lemma}[theorem]{Lemma}
 \newtheorem{proposition}{Proposition}[chapter]
 \newtheorem{remark}{Remark}[chapter]
 \newtheorem{example}[theorem]{Example}
+\theoremstyle{plain}
 
 
 % Helper: put theorem-like statements inside grey boxes (no outline).

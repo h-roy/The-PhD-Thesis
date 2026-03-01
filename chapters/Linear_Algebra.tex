@@ -630,6 +630,7 @@ The efficiency of this method relies on the block-wise projections. For a small 
 For well-conditioned blocks, we compute these small inverses using \textbf{direct methods} (e.g., Cholesky factorization) and cache the factors for reuse across the $t$ iterations. However, the blocks $\mathbf{J}_b$ happen to be ill-conditioned, we can substitute the direct inverse with an iterative \textsf{LstSq} solve (LSMR) for that specific block, ensuring numerical stability without compromising the overall algorithm.
 
 \subsection{Gradients: Differentiable Projections via \textsf{LstSq}}
+\label{subsec:proj_grads}
 Differentiation through the unrolled alternating projection loop is memory-intensive and numerically drift-prone. Instead, we derive exact gradients by expressing the projection primitive in terms of the \textsf{LstSq} primitive.
 We observe that the horizontal projection is exactly the solution to a specific least-squares problem mapped back to the tangent space:
 \begin{align}
